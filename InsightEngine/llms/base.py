@@ -5,7 +5,7 @@ Unified OpenAI-compatible LLM client for the Insight Engine, with retry support.
 import os
 import sys
 from datetime import datetime
-from typing import Any, Dict, Optional, Iterator, Generator
+from typing import Any, Dict, Optional, Iterator, Generator, List
 from loguru import logger
 
 from openai import OpenAI
@@ -46,6 +46,17 @@ class LLMClient:
         except ValueError:
             self.timeout = 1800.0
 
+        candidates_env = os.getenv("INSIGHT_ENGINE_MODEL_CANDIDATES", "")
+        candidates: List[str] = []
+        if candidates_env:
+            candidates = [m.strip() for m in candidates_env.split(",") if m.strip()]
+        self.model_candidates: List[str] = []
+        seen = set()
+        for m in [self.model_name] + candidates:
+            if m and m not in seen:
+                self.model_candidates.append(m)
+                seen.add(m)
+
         client_kwargs: Dict[str, Any] = {
             "api_key": api_key,
             "max_retries": 0,
@@ -53,6 +64,11 @@ class LLMClient:
         if base_url:
             client_kwargs["base_url"] = base_url
         self.client = OpenAI(**client_kwargs)
+
+    def _should_fallback(self, e: Exception) -> bool:
+        s = str(e).lower()
+        keys = ["rate limit", "429", "quota", "insufficient", "model_not_found", "model not found", "unsupported", "402", "payment"]
+        return any(k in s for k in keys)
 
     @with_retry(LLM_RETRY_CONFIG)
     def invoke(self, system_prompt: str, user_prompt: str, **kwargs) -> str:
@@ -72,15 +88,27 @@ class LLMClient:
 
         timeout = kwargs.pop("timeout", self.timeout)
 
-        response = self.client.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            timeout=timeout,
-            **extra_params,
-        )
-
-        if response.choices and response.choices[0].message:
-            return self.validate_response(response.choices[0].message.content)
+        last_error = None
+        for m in self.model_candidates:
+            try:
+                response = self.client.chat.completions.create(
+                    model=m,
+                    messages=messages,
+                    timeout=timeout,
+                    **extra_params,
+                )
+                self.model_name = m
+                self.provider = m
+                if response.choices and response.choices[0].message:
+                    return self.validate_response(response.choices[0].message.content)
+                return ""
+            except Exception as e:
+                last_error = e
+                if not self._should_fallback(e):
+                    raise
+                continue
+        if last_error:
+            raise last_error
         return ""
 
     def stream_invoke(self, system_prompt: str, user_prompt: str, **kwargs) -> Generator[str, None, None]:
@@ -113,22 +141,32 @@ class LLMClient:
 
         timeout = kwargs.pop("timeout", self.timeout)
 
-        try:
-            stream = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=messages,
-                timeout=timeout,
-                **extra_params,
-            )
-            
-            for chunk in stream:
-                if chunk.choices and len(chunk.choices) > 0:
-                    delta = chunk.choices[0].delta
-                    if delta and delta.content:
-                        yield delta.content
-        except Exception as e:
-            logger.error(f"流式请求失败: {str(e)}")
-            raise e
+        last_error = None
+        for m in self.model_candidates:
+            try:
+                stream = self.client.chat.completions.create(
+                    model=m,
+                    messages=messages,
+                    timeout=timeout,
+                    **extra_params,
+                )
+                self.model_name = m
+                self.provider = m
+                for chunk in stream:
+                    if chunk.choices and len(chunk.choices) > 0:
+                        delta = chunk.choices[0].delta
+                        if delta and delta.content:
+                            yield delta.content
+                return
+            except Exception as e:
+                last_error = e
+                if not self._should_fallback(e):
+                    logger.error(f"流式请求失败: {str(e)}")
+                    raise
+                continue
+        if last_error:
+            logger.error(f"流式请求失败: {str(last_error)}")
+            raise last_error
     
     @with_retry(LLM_RETRY_CONFIG)
     def stream_invoke_to_string(self, system_prompt: str, user_prompt: str, **kwargs) -> str:

@@ -161,7 +161,7 @@ def show_multilingual_demo(tokenizer, model, device, sentiment_map):
     
     print("\n=== 示例结束 ===")
     
-    '''
+    r"""
     正在加载多语言情感分析模型...
 从本地加载模型...
 模型加载成功! 使用设备: cuda
@@ -184,7 +184,7 @@ C:\Users\67093\.conda\envs\pytorch_python11\Lib\site-packages\transformers\model
   非常正面: 0.2216
 
 请输入文本:
-    '''
+    """
 
 if __name__ == "__main__":
     main()

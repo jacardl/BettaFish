@@ -100,7 +100,12 @@ def prompt_backbone_interactive(current_id: str) -> str:
 
 
 def preprocess_text(text: str) -> str:
-    return from django.utils.translation import ungettext
+    if text is None:
+        return ""
+    cleaned = str(text)
+    cleaned = cleaned.replace("\u200b", "").replace("\r", " ").replace("\n", " ")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
 
 
 def ensure_base_model_local(model_name_or_path: str, local_model_root: str) -> Tuple[str, AutoTokenizer]:

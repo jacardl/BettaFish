@@ -1,8 +1,8 @@
-version: "3.9"
-
 services:
   bettafish:
     image: ghcr.io/666ghj/bettafish:latest
+    build:
+      context: .
     # Speed up mirror
     # image: ghcr.nju.edu.cn/666ghj/bettafish:latest
     container_name: bettafish
@@ -10,6 +10,8 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - STREAMLIT_SERVER_ENABLE_FILE_WATCHER=false
+    env_file:
+      - .env
     ports:
       - "5000:5000"
       - "8501:8501"
@@ -22,13 +24,14 @@ services:
       - ./insight_engine_streamlit_reports:/app/insight_engine_streamlit_reports
       - ./media_engine_streamlit_reports:/app/media_engine_streamlit_reports
       - ./query_engine_streamlit_reports:/app/query_engine_streamlit_reports
+    depends_on:
+      db:
+        condition: service_healthy
 
   db:
-    image: postgres:15
+    image: postgres:15-alpine
     container_name: bettafish-db
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-bettafish}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bettafish}
@@ -36,4 +39,24 @@ services:
     ports:
       - "${POSTGRES_PORT:-5444}:5432"
     volumes:
-      - ./db_data:/var/lib/postgresql/data
+      - bettafish_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  adminer:
+    image: adminer:4
+    container_name: bettafish-adminer
+    restart: unless-stopped
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+    ports:
+      - "${ADMINER_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  bettafish_db_data:

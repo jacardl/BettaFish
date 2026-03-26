@@ -34,11 +34,13 @@ except ImportError as e:
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'Dedicated-to-creating-a-concise-and-versatile-public-opinion-analysis-platform'
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 # eventlet 在客户端主动断开时偶尔会抛出 ConnectionAbortedError，这里做一次防御性包裹，
 # 避免无意义的堆栈污染日志（仅在 eventlet 可用时启用）。
 def _patch_eventlet_disconnect_logging():
+    if sys.version_info >= (3, 12):
+        return
     try:
         import eventlet.wsgi  # type: ignore
     except Exception as exc:  # pragma: no cover - 仅在生产环境有效
@@ -1340,7 +1342,7 @@ if __name__ == '__main__':
     logger.info(f"Flask服务器已启动，访问地址: http://{HOST}:{PORT}")
     
     try:
-        socketio.run(app, host=HOST, port=PORT, debug=False)
+        socketio.run(app, host=HOST, port=PORT, debug=False, allow_unsafe_werkzeug=True)
     except KeyboardInterrupt:
         logger.info("\n正在关闭应用...")
         cleanup_processes()
