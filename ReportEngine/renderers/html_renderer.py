@@ -3415,19 +3415,19 @@ class HTMLRenderer:
 
         primary_palette = self._resolve_color_family(
             colors.get("primary"),
-            {"main": "#1a365d", "light": "#2d3748", "dark": "#0f1a2d"},
+            {"main": "#e90130", "light": "#ff4d6d", "dark": "#c1121f"},
         )
         secondary_palette = self._resolve_color_family(
             colors.get("secondary"),
-            {"main": "#e53e3e", "light": "#fc8181", "dark": "#c53030"},
+            {"main": "#1a1a1a", "light": "#404040", "dark": "#000000"},
         )
         bg = self._resolve_color_value(
             colors.get("bg") or colors.get("background") or colors.get("surface"),
-            "#f8f9fa",
+            "#ffffff",
         )
         text_color = self._resolve_color_value(
             colors.get("text") or colors.get("onBackground"),
-            "#212529",
+            "#1a1a1a",
         )
         card = self._resolve_color_value(
             colors.get("card") or colors.get("surfaceCard"),
@@ -3435,15 +3435,17 @@ class HTMLRenderer:
         )
         border = self._resolve_color_value(
             colors.get("border") or colors.get("divider"),
-            "#dee2e6",
+            "#e5e5e5",
         )
-        shadow = "rgba(0,0,0,0.08)"
+        shadow = "rgba(0,0,0,0.06)"
         container_width = spacing.get("container") or spacing.get("containerWidth") or "1200px"
         gutter = spacing.get("gutter") or spacing.get("pagePadding") or "24px"
-        body_font = fonts.get("body") or fonts.get("primary") or "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        body_font = fonts.get("body") or fonts.get("primary") or "'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
         heading_font = fonts.get("heading") or fonts.get("primary") or fonts.get("secondary") or body_font
 
         return f"""
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
+
 :root {{ /* 含义：亮色主题变量区域；设置：在本块内调整相关属性 */
   --bg-color: {bg}; /* 含义：页面背景色主色调；设置：在 themeTokens 中覆盖或改此默认值 */
   --text-color: {text_color}; /* 含义：正文文本基础颜色；设置：在 themeTokens 中覆盖或改此默认值 */
