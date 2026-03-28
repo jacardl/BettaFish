@@ -251,9 +251,54 @@ def _get_task(task_id: str) -> Optional['ReportTask']:
                     if state_path.exists():
                         temp_task.state_file_ready = True
                         temp_task.state_file_path = str(state_path.resolve())
+                        try:
+                            state_data = json.loads(state_path.read_text(encoding="utf-8"))
+                            
+                            # 尝试从state中获取
+                            insight_report = state_data.get('insight_engine_report', '')
+                            media_report = state_data.get('media_engine_report', '')
+                            query_report = state_data.get('query_engine_report', '')
+                            forum_logs = state_data.get('forum_logs', '')
+                            
+                            # 如果为空，尝试去三个引擎的目录里找对应的文件
+                            # query_safe 的格式如：游戏达巴_水痕之地
+                            # 各引擎目录的报告前缀是 deep_search_report_，匹配查询词开头
+                            if not insight_report:
+                                insight_report = _find_engine_report('insight', query_safe)
+                            if not media_report:
+                                media_report = _find_engine_report('media', query_safe)
+                            if not query_report:
+                                query_report = _find_engine_report('query', query_safe)
+
+                            temp_task.history_inputs = {
+                                'insight': insight_report,
+                                'media': media_report,
+                                'query': query_report,
+                                'forum': forum_logs
+                            }
+                        except Exception as e:
+                            logger.warning(f"读取历史任务状态文件失败 {state_path}: {e}")
                         
                 return temp_task
     return None
+
+def _find_engine_report(engine_name: str, query_safe: str) -> str:
+    """
+    根据引擎名称和查询词前缀，在对应的目录中寻找最新的 md 报告并读取内容。
+    """
+    engine_dir = Path(f"{engine_name}_engine_streamlit_reports")
+    if not engine_dir.exists():
+        return ""
+        
+    md_files = list(engine_dir.glob(f"deep_search_report_{query_safe}*.md"))
+    if md_files:
+        # 如果找到多个，按修改时间取最新的
+        latest_file = max(md_files, key=lambda p: p.stat().st_mtime)
+        try:
+            return latest_file.read_text(encoding="utf-8")
+        except Exception as e:
+            logger.warning(f"读取 {engine_name} 引擎报告文件失败 {latest_file}: {e}")
+    return ""
 
 
 def _format_sse(event: Dict[str, Any]) -> str:
@@ -352,6 +397,7 @@ class ReportTask:
         self.markdown_file_path = ""
         self.markdown_file_relative_path = ""
         self.markdown_file_name = ""
+        self.history_inputs = {}  # 保存从状态文件中恢复的三个引擎的历史数据
         # ====== 流式事件缓存与并发保护 ======
         # 使用deque保存最近的事件，结合锁保证多线程下的安全访问
         self.event_history: deque = deque(maxlen=1000)
@@ -407,7 +453,8 @@ class ReportTask:
             'ir_file_path': self.ir_file_relative_path or self.ir_file_path,
             'markdown_file_ready': bool(self.markdown_file_path),
             'markdown_file_name': self.markdown_file_name,
-            'markdown_file_path': self.markdown_file_relative_path or self.markdown_file_path
+            'markdown_file_path': self.markdown_file_relative_path or self.markdown_file_path,
+            'history_inputs': self.history_inputs
         }
 
     def publish_event(self, event_type: str, payload: Dict[str, Any]) -> None:

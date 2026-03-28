@@ -100,7 +100,11 @@ class ReportState:
             "selected_template": self.selected_template,
             "has_html_content": bool(self.html_content),
             "html_content_length": len(self.html_content) if self.html_content else 0,
-            "metadata": self.metadata.to_dict()
+            "metadata": self.metadata.to_dict(),
+            "query_engine_report": self.query_engine_report,
+            "media_engine_report": self.media_engine_report,
+            "insight_engine_report": self.insight_engine_report,
+            "forum_logs": self.forum_logs
         }
     
     def save_to_file(self, file_path: str):
