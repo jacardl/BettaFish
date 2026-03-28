@@ -209,7 +209,51 @@ def _get_task(task_id: str) -> Optional['ReportTask']:
     with task_lock:
         if current_task and current_task.task_id == task_id:
             return current_task
-        return tasks_registry.get(task_id)
+        task = tasks_registry.get(task_id)
+        if task:
+            return task
+            
+    # 如果是基于文件恢复的历史任务，临时构建一个Task对象返回
+    if task_id.startswith('recovered_file_') and report_agent:
+        output_dir = Path(report_agent.config.OUTPUT_DIR)
+        if output_dir.exists():
+            filename = task_id.replace('recovered_file_', '')
+            target_html = output_dir / filename
+            
+            if target_html.exists():
+                temp_task = ReportTask("历史任务 (从文件恢复)", task_id)
+                temp_task.status = "completed"
+                temp_task.progress = 100
+                temp_task.report_file_ready = True
+                temp_task.report_file_path = str(target_html.resolve())
+                temp_task.report_file_name = target_html.name
+                temp_task.created_at = datetime.fromtimestamp(target_html.stat().st_ctime)
+                temp_task.updated_at = datetime.fromtimestamp(target_html.stat().st_mtime)
+                
+                try:
+                    temp_task.html_content = target_html.read_text(encoding="utf-8")
+                except Exception:
+                    pass
+                    
+                base_name_parts = target_html.stem.replace('final_report_', '').split('_')
+                if len(base_name_parts) >= 2:
+                    timestamp = f"{base_name_parts[-2]}_{base_name_parts[-1]}"
+                    query_safe = '_'.join(base_name_parts[:-2])
+                    
+                    ir_filename = f"report_ir_{query_safe}_{timestamp}.json"
+                    ir_path = Path(report_agent.config.DOCUMENT_IR_OUTPUT_DIR) / ir_filename
+                    if ir_path.exists():
+                        temp_task.ir_file_ready = True
+                        temp_task.ir_file_path = str(ir_path.resolve())
+                        
+                    state_filename = f"report_state_{query_safe}_{timestamp}.json"
+                    state_path = output_dir / state_filename
+                    if state_path.exists():
+                        temp_task.state_file_ready = True
+                        temp_task.state_file_path = str(state_path.resolve())
+                        
+                return temp_task
+    return None
 
 
 def _format_sse(event: Dict[str, Any]) -> str:
@@ -574,6 +618,96 @@ def run_report_generation(task: ReportTask, query: str, custom_template: str = "
                 current_task = None
 
 
+@report_bp.route('/history', methods=['GET'])
+def get_history_tasks():
+    """
+    获取历史任务列表。
+    扫描输出目录下的所有报告文件，解析元数据，按时间倒序返回。
+    """
+    try:
+        if not report_agent:
+            return jsonify({'success': False, 'error': 'Report Engine未初始化'}), 500
+            
+        output_dir = Path(report_agent.config.OUTPUT_DIR)
+        tasks = []
+        
+        if output_dir.exists():
+            # 扫描所有生成的报告文件
+            html_files = list(output_dir.glob("final_report_*.html"))
+            
+            for html_path in html_files:
+                try:
+                    # 从文件名解析信息: final_report_{query_safe}_{timestamp}.html
+                    stem = html_path.stem
+                    parts = stem.replace('final_report_', '').split('_')
+                    
+                    if len(parts) >= 2:
+                        timestamp = f"{parts[-2]}_{parts[-1]}"
+                        query_safe = '_'.join(parts[:-2])
+                        task_id = f"recovered_file_{html_path.name}"
+                        
+                        task_data = {
+                            'task_id': task_id,
+                            'query': query_safe.replace('_', ' ') or '历史任务',
+                            'status': 'completed',
+                            'progress': 100,
+                            'created_at': datetime.fromtimestamp(html_path.stat().st_ctime).isoformat(),
+                            'updated_at': datetime.fromtimestamp(html_path.stat().st_mtime).isoformat(),
+                            'report_file_name': html_path.name,
+                            'report_file_path': str(html_path.resolve()),
+                            'has_result': True,
+                            'report_file_ready': True,
+                            'state_file_ready': False,
+                            'ir_file_ready': False
+                        }
+                        
+                        # 检查相关文件
+                        ir_filename = f"report_ir_{query_safe}_{timestamp}.json"
+                        ir_path = Path(report_agent.config.DOCUMENT_IR_OUTPUT_DIR) / ir_filename
+                        if ir_path.exists():
+                            task_data['ir_file_ready'] = True
+                            task_data['ir_file_path'] = str(ir_path.resolve())
+                            
+                        state_filename = f"report_state_{query_safe}_{timestamp}.json"
+                        state_path = output_dir / state_filename
+                        if state_path.exists():
+                            task_data['state_file_ready'] = True
+                            task_data['state_file_path'] = str(state_path.resolve())
+                            
+                        tasks.append(task_data)
+                except Exception as e:
+                    logger.warning(f"解析历史任务文件失败 {html_path.name}: {e}")
+                    
+        # 按更新时间倒序排列
+        tasks.sort(key=lambda x: x['updated_at'], reverse=True)
+        
+        # 将内存中还没持久化但已完成的任务也合并进去（去重）
+        with task_lock:
+            memory_tasks = [t.to_dict() for t in tasks_registry.values() if t.status == 'completed']
+            
+        # 简单去重，优先使用内存中的数据（可能包含更完整的元数据）
+        seen_paths = {t.get('report_file_path') for t in memory_tasks if t.get('report_file_path')}
+        final_tasks = memory_tasks.copy()
+        
+        for t in tasks:
+            if t.get('report_file_path') not in seen_paths:
+                final_tasks.append(t)
+                seen_paths.add(t.get('report_file_path'))
+                
+        # 再次按时间排序
+        final_tasks.sort(key=lambda x: x['updated_at'], reverse=True)
+
+        return jsonify({
+            'success': True,
+            'tasks': final_tasks
+        })
+    except Exception as e:
+        logger.exception(f"获取历史任务列表失败: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 @report_bp.route('/status', methods=['GET'])
 def get_status():
     """
@@ -585,13 +719,63 @@ def get_status():
     try:
         engines_status = check_engines_ready()
 
+        # 如果当前没有在内存中的任务，尝试从本地查找最新生成的报告作为兜底
+        task_data = current_task.to_dict() if current_task else None
+        
+        if not task_data and report_agent:
+            output_dir = Path(report_agent.config.OUTPUT_DIR)
+            if output_dir.exists():
+                html_files = list(output_dir.glob("final_report_*.html"))
+                if html_files:
+                    # 找到最新的文件
+                    latest_html = max(html_files, key=lambda p: p.stat().st_mtime)
+                    
+                    # 尝试读取对应的内容和元数据
+                    task_data = {
+                        'task_id': f"recovered_file_{latest_html.name}",
+                        'query': '历史任务 (从文件恢复)',
+                        'status': 'completed',
+                        'progress': 100,
+                        'error_message': '',
+                        'created_at': datetime.fromtimestamp(latest_html.stat().st_ctime).isoformat(),
+                        'updated_at': datetime.fromtimestamp(latest_html.stat().st_mtime).isoformat(),
+                        'has_result': True,
+                        'report_file_ready': True,
+                        'report_file_name': latest_html.name,
+                        'report_file_path': str(latest_html.resolve()),
+                        'state_file_ready': False,
+                        'state_file_path': '',
+                        'ir_file_ready': False,
+                        'ir_file_path': '',
+                        'markdown_file_ready': False,
+                        'markdown_file_path': ''
+                    }
+                    
+                    # 尝试关联寻找IR和State文件
+                    base_name_parts = latest_html.stem.replace('final_report_', '').split('_')
+                    if len(base_name_parts) >= 2:
+                        timestamp = f"{base_name_parts[-2]}_{base_name_parts[-1]}"
+                        query_safe = '_'.join(base_name_parts[:-2])
+                        
+                        ir_filename = f"report_ir_{query_safe}_{timestamp}.json"
+                        ir_path = Path(report_agent.config.DOCUMENT_IR_OUTPUT_DIR) / ir_filename
+                        if ir_path.exists():
+                            task_data['ir_file_ready'] = True
+                            task_data['ir_file_path'] = str(ir_path.resolve())
+                            
+                        state_filename = f"report_state_{query_safe}_{timestamp}.json"
+                        state_path = output_dir / state_filename
+                        if state_path.exists():
+                            task_data['state_file_ready'] = True
+                            task_data['state_file_path'] = str(state_path.resolve())
+
         return jsonify({
             'success': True,
             'initialized': report_agent is not None,
             'engines_ready': engines_status['ready'],
             'files_found': engines_status.get('files_found', []),
             'missing_files': engines_status.get('missing_files', []),
-            'current_task': current_task.to_dict() if current_task else None
+            'current_task': task_data
         })
     except Exception as e:
         logger.exception(f"获取Report Engine状态失败: {str(e)}")
@@ -1227,7 +1411,7 @@ def export_markdown(task_id: str):
     基于已保存的 Document IR 调用 MarkdownRenderer，生成文件并返回下载。
     """
     try:
-        task = tasks_registry.get(task_id)
+        task = _get_task(task_id)
         if not task:
             return jsonify({
                 'success': False,
@@ -1316,7 +1500,7 @@ def export_pdf(task_id: str):
             }), 503
 
         # 获取任务信息
-        task = tasks_registry.get(task_id)
+        task = _get_task(task_id)
         if not task:
             return jsonify({
                 'success': False,

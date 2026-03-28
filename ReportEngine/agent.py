@@ -437,6 +437,12 @@ class ReportAgent:
         self.state.mark_processing()
 
         normalized_reports = self._normalize_reports(reports)
+        
+        # 将输入数据存入状态对象，以便后续保存到状态文件
+        self.state.query_engine_report = normalized_reports.get("query_engine", "")
+        self.state.media_engine_report = normalized_reports.get("media_engine", "")
+        self.state.insight_engine_report = normalized_reports.get("insight_engine", "")
+        self.state.forum_logs = self._stringify(forum_logs)
 
         def emit(event_type: str, payload: Dict[str, Any]):
             """面向Report Engine流通道的事件分发器，保证错误不外泄。"""
