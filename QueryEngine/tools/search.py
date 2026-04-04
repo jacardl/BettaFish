@@ -97,6 +97,8 @@ class TavilyNewsAgency:
         """内部通用的搜索执行器，所有工具最终都调用此方法"""
         try:
             kwargs['topic'] = 'general'
+            # 强制开启获取全文选项，避免因 snippet 被截断导致 LLM 脑补幻觉
+            kwargs['include_raw_content'] = True
             api_params = {k: v for k, v in kwargs.items() if v is not None}
             response_dict = self._client.search(**api_params)
             
@@ -106,7 +108,8 @@ class TavilyNewsAgency:
                     url=item.get('url'),
                     content=item.get('content'),
                     score=item.get('score'),
-                    raw_content=item.get('raw_content'),
+                    # 优先使用 raw_content (全文)，如果没有则退化为 content (摘要)
+                    raw_content=item.get('raw_content') or item.get('content'),
                     published_date=item.get('published_date')
                 ) for item in response_dict.get('results', [])
             ]

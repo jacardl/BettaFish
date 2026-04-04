@@ -1,6 +1,6 @@
 services:
   bettafish:
-    image: ghcr.io/666ghj/bettafish:latest
+    #image: ghcr.io/666ghj/bettafish:latest
     build:
       context: .
     # Speed up mirror

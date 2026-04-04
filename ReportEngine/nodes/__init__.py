@@ -6,6 +6,8 @@ Report Engine节点处理模块。
 
 from .base_node import BaseNode, StateMutationNode
 from .template_selection_node import TemplateSelectionNode
+from .base_node import BaseNode, StateMutationNode
+from .template_selection_node import TemplateSelectionNode
 from .chapter_generation_node import (
     ChapterGenerationNode,
     ChapterJsonParseError,
@@ -14,6 +16,7 @@ from .chapter_generation_node import (
 )
 from .document_layout_node import DocumentLayoutNode
 from .word_budget_node import WordBudgetNode
+from .fact_checker_node import FactCheckerNode
 
 __all__ = [
     "BaseNode",
@@ -25,4 +28,5 @@ __all__ = [
     "ChapterValidationError",
     "DocumentLayoutNode",
     "WordBudgetNode",
+    "FactCheckerNode",
 ]

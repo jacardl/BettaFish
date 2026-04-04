@@ -76,7 +76,11 @@ if REPORT_ENGINE_AVAILABLE:
     app.register_blueprint(report_bp, url_prefix='/api/report')
     logger.info("ReportEngine接口已注册")
 else:
-    logger.info("ReportEngine不可用，跳过接口注册")
+    logger.info("ReportEngine不可用，跳过接口注册并添加降级路由")
+    @app.route('/api/report/status', methods=['GET'])
+    def fallback_report_status():
+        return jsonify({'success': False, 'initialized': False, 'error': 'ReportEngine不可用'})
+
 
 # 创建日志目录
 LOG_DIR = Path('logs')

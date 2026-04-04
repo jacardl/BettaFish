@@ -508,9 +508,19 @@ class HTMLRenderer:
 </div>
 """.strip()
 
+        warning_banner = """
+<div class="ai-warning-banner no-print" style="background-color: #fff3cd; color: #856404; padding: 12px 20px; border-left: 4px solid #ffeeba; margin: 20px auto; max-width: 1200px; border-radius: 4px; font-size: 14px; display: flex; align-items: center; gap: 10px;">
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+  <div>
+    <strong>免责声明：</strong> 本报告由AI基于实时网络搜索生成，受限于网络环境、反爬策略及LLM固有的“幻觉”现象，部分数据、事实或观点可能存在偏差或虚构。请务必结合<a href="#citations" style="color: #856404; text-decoration: underline;">文末信息源引用</a>进行交叉验证，切勿将此作为唯一的决策依据。
+  </div>
+</div>
+"""
+
         return f"""
 <body>
 {header}
+{warning_banner}
 {overlay}
 <main>
 {hero}

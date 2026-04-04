@@ -34,6 +34,7 @@ from .nodes import (
     ChapterValidationError,
     DocumentLayoutNode,
     WordBudgetNode,
+    FactCheckerNode,
 )
 from .renderers import HTMLRenderer
 from .state import ReportState
@@ -401,6 +402,7 @@ class ReportAgent:
             fallback_llm_clients=self.json_rescue_clients,
             error_log_dir=self.config.JSON_ERROR_LOG_DIR,
         )
+        self.fact_checker_node = FactCheckerNode(self.llm_client)
     
     def generate_report(self, query: str, reports: List[Any], forum_logs: str = "",
                         custom_template: str = "", save_report: bool = True,
@@ -754,6 +756,12 @@ class ReportAgent:
                 chapters
             )
             emit('stage', {'stage': 'chapters_compiled', 'chapter_count': len(chapters)})
+            
+            # --- 执行交叉验证与置信度评分 ---
+            emit('progress', {'progress': 95, 'message': '正在执行交叉验证与事实核查'})
+            document_ir = self.fact_checker_node.run(document_ir, normalized_reports)
+            emit('stage', {'stage': 'fact_checked'})
+            
             html_report = self.renderer.render(document_ir)
             emit('stage', {'stage': 'html_rendered', 'html_length': len(html_report)})
 

@@ -239,7 +239,7 @@ SYSTEM_PROMPT_TEMPLATE_SELECTION = f"""
 
 # HTML报告生成的系统提示词
 SYSTEM_PROMPT_HTML_GENERATION = f"""
-你是一位专业的HTML报告生成专家。你将接收来自三个分析引擎的报告内容、论坛监控日志以及选定的报告模板，需要生成一份不少于3万字的完整的HTML格式分析报告。
+你是一位专业的HTML报告生成专家。你将接收来自三个分析引擎的报告内容、论坛监控日志以及选定的报告模板，需要生成一份完整的HTML格式分析报告。
 
 <INPUT JSON SCHEMA>
 {json.dumps(input_schema_html_generation, indent=2, ensure_ascii=False)}
@@ -249,7 +249,7 @@ SYSTEM_PROMPT_HTML_GENERATION = f"""
 1. 整合三个引擎的分析结果，避免重复内容
 2. 结合三个引擎在分析时的相互讨论数据（forum_logs），站在不同角度分析内容
 3. 按照选定模板的结构组织内容
-4. 生成包含数据可视化的完整HTML报告，不少于3万字
+4. 生成包含数据可视化的完整HTML报告
 
 **HTML报告要求：**
 
@@ -329,14 +329,33 @@ SYSTEM_PROMPT_CHAPTER_JSON = f"""
 11. 如果chapterPlan中包含target/min/max或sections细分预算，请尽量贴合，必要时在notes允许的范围内突破，同时在结构上体现详略；
 12. 一级标题需使用中文数字（“一、二、三”），二级标题使用阿拉伯数字（“1.1、1.2”），heading.text中直接写好编号，与outline顺序对应；
 13. 严禁输出外部图片/AI生图链接，仅可使用Chart.js图表、表格、色块、callout等HTML原生组件；如需视觉辅助请改为文字描述或数据表；
-14. 段落混排需通过marks表达粗体、斜体、下划线、颜色等样式，禁止残留Markdown语法（如**text**）；
-15. 行间公式用block.type="math"并填入math.latex，行内公式在paragraph.inlines里将文本设为Latex并加上marks.type="math"，渲染层会用MathJax处理；
-16. widget配色需与CSS变量兼容，不要硬编码背景色或文字色，legend/ticks由渲染层控制；
-17. 善用callout、kpiGrid、表格、widget等提升版面丰富度，但必须遵守模板章节范围。
-18. 输出前务必自检JSON语法：禁止出现`{{}}{{`或`][`相连缺少逗号、列表项嵌套超过一层、未闭合的括号或未转义换行，`list` block的items必须是`[[block,...], ...]`结构，若无法满足则返回错误提示而不是输出不合法JSON。
-19. 所有widget块必须在顶层提供`data`或`dataRef`（可将props中的`data`上移），确保Chart.js能够直接渲染；缺失数据时宁可输出表格或段落，绝不留空。
-20. 任何block都必须声明合法`type`（heading/paragraph/list/...）；若需要普通文本请使用`paragraph`并给出`inlines`，禁止返回`type:null`或未知值。
-21. blockquote内容限制：blockquote块内部的blocks只允许包含paragraph类型的block，严禁在blockquote内嵌套表格（table）、列表（list）、图表（widget）、标题（heading）、代码块（code）、公式（math）、嵌套引用（blockquote）等任何非paragraph块；如果引用内容需要用表格/列表等复杂结构呈现，必须将其移到blockquote外部。
+14. **高质量商业写作规范（核心）**：
+    - **引人入胜的Hook（钩子）**：在章节开头或重要段落使用引人注意的切入点（如核心数据、尖锐的现象冲突、或反常识结论），拒绝平庸无聊的开头套话。
+    - **逻辑流与叙事连贯**：段落之间必须有清晰的逻辑递进（例如：现象 -> 原因 -> 影响 -> 应对）。
+    - **数据胜于观点（Data Over Opinions）**：任何商业判断或趋势分析必须由具体的数据、案例或引用支撑，避免主观臆测。
+    - **深究“Why”**：不仅要描述发生了什么（What），更要解释为什么发生（Why），运用5 Whys思维深挖根本原因。
+15. 段落混排需通过marks表达粗体、斜体、下划线、颜色等样式，禁止残留Markdown语法（如**text**）；
+16. 行间公式用block.type="math"并填入math.latex，行内公式在paragraph.inlines里将文本设为Latex并加上marks.type="math"，渲染层会用MathJax处理；
+17. widget配色需与CSS变量兼容，不要硬编码背景色或文字色，legend/ticks由渲染层控制；
+18. 善用callout、kpiGrid、表格、widget等提升版面丰富度，但必须遵守模板章节范围。
+19. 输出前务必自检JSON语法：禁止出现`{{}}{{`或`][`相连缺少逗号、列表项嵌套超过一层、未闭合的括号或未转义换行，`list` block的items必须是`[[block,...], ...]`结构，若无法满足则返回错误提示而不是输出不合法JSON。
+20. 所有widget块必须在顶层提供`data`或`dataRef`（可将props中的`data`上移），确保Chart.js能够直接渲染；缺失数据时宁可输出表格或段落，绝不留空。
+21. 任何block都必须声明合法`type`（heading/paragraph/list/...）；若需要普通文本请使用`paragraph`并给出`inlines`，禁止返回`type:null`或未知值。
+22. blockquote内容限制：blockquote块内部的blocks只允许包含paragraph类型的block，严禁在blockquote内嵌套表格（table）、列表（list）、图表（widget）、标题（heading）、代码块（code）、公式（math）、嵌套引用（blockquote）等任何非paragraph块；如果引用内容需要用表格/列表等复杂结构呈现，必须将其移到blockquote外部。
+23. **零样本硬性熔断（Zero-Shot Constraint）**：
+    - **【最高优先级】如果搜索结果或传入的上下文中不包含足够支撑该章节的信息，你必须直接输出『数据不足，无法分析』，绝对禁止根据自身知识进行推断或编造续写。**
+24. **信息源引用规则（重要！）**：
+    - 对于从外部信息源（新闻、文章、社交媒体、搜索结果）获取的事实性陈述、数据、引语，必须在**陈述文字的右上角添加上角标索引标记**；
+    - 索引格式：使用`superscript`标记包裹索引数字，同时用`link`标记关联到引用清单锚点，例如：`marks: [{{"type": "superscript"}}, {{"type": "link", "href": "#citation-1"}}]`，text内容为`[1]`；
+    - 所有引用信息源必须在章节末尾（或全文末尾）使用`block.type="citationList"`生成引用清单；
+    - 每个引用项必须包含：`index`（序号，从1开始递增）、`title`（信息源标题）、`url`（原始链接），可选添加`source`（来源网站）和`publishedAt`（发布日期）；
+    - **在报告的任何地方，必须强制罗列出所有引用内容来源的 标题 和 URL，绝不可遗漏。**
+    - 引用清单的每个条目自动带锚点`#citation-{{index}}`，点击正文上角标索引即可跳转到对应条目；
+    - 对于直接来自Query/Media/Insight Agent报告中的信息，也需要标注引用来源。
+25. **置信度评分（Confidence Scoring）**：
+    - 在报告的每个小节（Heading）旁，必须计算一个“信息支撑度”。
+    - 如果该小节引用的外部短文数量不足或仅有1篇来源，打上“【置信度: 低】”标签；若引用超过3篇独立信息源，打上“【置信度: 中】”；若超过5篇长文，打上“【置信度: 高】”。
+    - 请在小节开头以 `callout` 的形式呈现该置信度标签。
 
 <CHAPTER JSON SCHEMA>
 {CHAPTER_JSON_SCHEMA_TEXT}

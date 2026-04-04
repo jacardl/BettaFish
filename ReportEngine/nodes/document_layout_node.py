@@ -58,6 +58,10 @@ class DocumentLayoutNode(BaseNode):
         返回:
             dict: 包含 title/subtitle/toc/hero/themeTokens 等设计信息的字典。
         """
+        # 计算输入数据量，判断是否信息稀疏
+        total_report_length = sum(len(str(content)) for content in reports.values())
+        is_sparse = total_report_length < 2000
+        
         # 将模板原文、切片结构与多源报告一并喂给LLM，便于其理解层级与素材
         payload = {
             "query": query,
@@ -72,6 +76,11 @@ class DocumentLayoutNode(BaseNode):
             },
             "reports": reports,
             "forumLogs": forum_logs,
+            "is_sparse_data": is_sparse,
+            "pruning_instruction": (
+                "【强制动态大纲修剪】当前输入数据量极少，事实密度过低。你必须主动砍掉 PEST、SWOT、定量图表等深水区章节，将报告降级为一份简报。请在 tocPlan 中移除这些章节，绝对不要强逼 LLM 去填模板编造内容。" 
+                if is_sparse else "当前数据量正常，可按需保留 PEST、SWOT 等深度分析章节。"
+            )
         }
 
         user_message = build_document_layout_prompt(payload)
