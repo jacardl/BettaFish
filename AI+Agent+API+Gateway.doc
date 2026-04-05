@@ -1,0 +1,753 @@
+Date: Thu, 2 Apr 2026 23:18:42 +0000 (UTC)
+Message-ID: <1727346219.7.1775171922870@dead9b85c41b>
+Subject: Exported From Confluence
+MIME-Version: 1.0
+Content-Type: multipart/related; 
+	boundary="----=_Part_6_2000138341.1775171922870"
+
+------=_Part_6_2000138341.1775171922870
+Content-Type: text/html; charset=UTF-8
+Content-Transfer-Encoding: quoted-printable
+Content-Location: file:///C:/exported.html
+
+<html xmlns:o=3D'urn:schemas-microsoft-com:office:office'
+      xmlns:w=3D'urn:schemas-microsoft-com:office:word'
+      xmlns:v=3D'urn:schemas-microsoft-com:vml'
+      xmlns=3D'urn:w3-org-ns:HTML'>
+<head>
+    <meta http-equiv=3D"Content-Type" content=3D"text/html; charset=3Dutf-8=
+">
+    <title>AI Agent API Gateway</title>
+    <!--[if gte mso 9]>
+    <xml>
+        <o:OfficeDocumentSettings>
+            <o:TargetScreenSize>1024x640</o:TargetScreenSize>
+            <o:PixelsPerInch>72</o:PixelsPerInch>
+            <o:AllowPNG/>
+        </o:OfficeDocumentSettings>
+        <w:WordDocument>
+            <w:View>Print</w:View>
+            <w:Zoom>90</w:Zoom>
+            <w:DoNotOptimizeForBrowser/>
+        </w:WordDocument>
+    </xml>
+    <![endif]-->
+    <style>
+                <!--
+        @page Section1 {
+            size: 8.5in 11.0in;
+            margin: 1.0in;
+            mso-header-margin: .5in;
+            mso-footer-margin: .5in;
+            mso-paper-source: 0;
+        }
+
+        table {
+            border: solid 1px;
+            border-collapse: collapse;
+        }
+
+        table td, table th {
+            border: solid 1px;
+            padding: 5px;
+        }
+
+        td {
+            page-break-inside: avoid;
+        }
+
+        tr {
+            page-break-after: avoid;
+        }
+
+        div.Section1 {
+            page: Section1;
+        }
+
+        /* Confluence print stylesheet. Common to all themes for print medi=
+a */
+/* Full of !important until we improve batching for print CSS */
+
+@media print {
+    #main {
+        padding-bottom: 1em !important; /* The default padding of 6em is to=
+o much for printouts */
+    }
+
+    body {
+        font: var(--ds-font-body-small, Arial, Helvetica, FreeSans, sans-se=
+rif);
+    }
+
+    body, #full-height-container, #main, #page, #content, .has-personal-sid=
+ebar #content {
+        background: var(--ds-surface, #fff) !important;
+        color: var(--ds-text, #000) !important;
+        border: 0 !important;
+        width: 100% !important;
+        height: auto !important;
+        min-height: auto !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        display: block !important;
+    }
+
+    a, a:link, a:visited, a:focus, a:hover, a:active {
+        color: var(--ds-text, #000);
+    }
+
+    #content h1,
+    #content h2,
+    #content h3,
+    #content h4,
+    #content h5,
+    #content h6 {
+        page-break-after: avoid;
+    }
+
+    pre {
+        font: var(--ds-font-code, Monaco, "Courier New", monospace);
+    }
+
+    #header,
+    .aui-header-inner,
+    #navigation,
+    #sidebar,
+    .sidebar,
+    #personal-info-sidebar,
+    .ia-fixed-sidebar,
+    .page-actions,
+    .navmenu,
+    .ajs-menu-bar,
+    .noprint,
+    .inline-control-link,
+    .inline-control-link a,
+    a.show-labels-editor,
+    .global-comment-actions,
+    .comment-actions,
+    .quick-comment-container,
+    #addcomment {
+        display: none !important;
+    }
+
+    /* CONF-28544 cannot print multiple pages in IE */
+    #splitter-content {
+        position: relative !important;
+    }
+
+    .comment .date::before {
+        content: none !important; /* remove middot for print view */
+    }
+
+    h1.pagetitle img {
+        height: auto;
+        width: auto;
+    }
+
+    .print-only {
+        display: block;
+    }
+
+    #footer {
+        position: relative !important; /* CONF-17506 Place the footer at en=
+d of the content */
+        margin: 0;
+        padding: 0;
+        background: none;
+        clear: both;
+    }
+
+    #poweredby {
+        border-top: none;
+        background: none;
+    }
+
+    #poweredby li.print-only {
+        display: list-item;
+        font-style: italic;
+    }
+
+    #poweredby li.noprint {
+        display: none;
+    }
+
+    /* no width controls in print */
+    .wiki-content .table-wrap,
+    .wiki-content p,
+    .panel .codeContent,
+    .panel .codeContent pre,
+    .image-wrap {
+        overflow: visible !important;
+    }
+
+    /* TODO - should this work? */
+    #children-section,
+    #comments-section .comment,
+    #comments-section .comment .comment-body,
+    #comments-section .comment .comment-content,
+    #comments-section .comment p {
+        page-break-inside: avoid;
+    }
+
+    #page-children a {
+        text-decoration: none;
+    }
+
+    /**
+     hide twixies
+
+     the specificity here is a hack because print styles
+     are getting loaded before the base styles. */
+    #comments-section.pageSection .section-header,
+    #comments-section.pageSection .section-title,
+    #children-section.pageSection .section-header,
+    #children-section.pageSection .section-title,
+    .children-show-hide {
+        padding-left: 0;
+        margin-left: 0;
+    }
+
+    .children-show-hide.icon {
+        display: none;
+    }
+
+    /* personal sidebar */
+    .has-personal-sidebar #content {
+        margin-right: 0px;
+    }
+
+    .has-personal-sidebar #content .pageSection {
+        margin-right: 0px;
+    }
+
+    .no-print, .no-print * {
+        display: none !important;
+    }
+}
+-->
+    </style>
+</head>
+<body>
+    <h1>AI Agent API Gateway</h1>
+    <div class=3D"Section1">
+        <style type=3D"text/css">/*<![CDATA[*/
+div.rbtoc1775171922843 {padding: 0px;}
+div.rbtoc1775171922843 ul {list-style: none;margin-left: 0px;}
+div.rbtoc1775171922843 li {margin-left: 0px;padding-left: 0px;}
+
+/*]]>*/</style>
+<div class=3D"toc-macro rbtoc1775171922843">
+<ul class=3D"toc-indentation">
+<li><a href=3D"#AIAgentAPIGateway-DevelopmentEnvironment">Development Envir=
+onment</a></li>
+<li><a href=3D"#AIAgentAPIGateway-Exampleusage">Example usage</a>
+<ul class=3D"toc-indentation">
+<li><a href=3D"#AIAgentAPIGateway-Authentication">Authentication</a></li>
+</ul></li>
+<li><a href=3D"#AIAgentAPIGateway-StagingEnvironment">Staging Environment</=
+a>
+<ul class=3D"toc-indentation">
+<li><a href=3D"#AIAgentAPIGateway-Authentication.1">Authentication</a></li>
+</ul></li>
+<li><a href=3D"#AIAgentAPIGateway-Exampleusage.1">Example usage</a></li>
+<li><a href=3D"#AIAgentAPIGateway-ProductionEnvironment">Production Environ=
+ment</a>
+<ul class=3D"toc-indentation">
+<li><a href=3D"#AIAgentAPIGateway-Authentication.2">Authentication</a></li>
+</ul></li>
+<li><a href=3D"#AIAgentAPIGateway-Exampleusage.2">Example usage</a></li>
+<li><a href=3D"#AIAgentAPIGateway-IntegratedAILLMProviders">Integrated AI L=
+LM Providers</a></li>
+<li><a href=3D"#AIAgentAPIGateway-Management">Management</a></li>
+</ul>
+</div>
+<p local-id=3D"32ac38782ff1">The API Gateway here acts both as traditional =
+API Gateway and AI Agent Gateway, using</p>
+<ul local-id=3D"554976b5e6e0">
+<li local-id=3D"0544ab166671">
+<p local-id=3D"7340cd48bb6f">Kong as API Gateway, for authentication, HTTP =
+routing</p></li>
+<li local-id=3D"4148d5b8a1f8">
+<p local-id=3D"a6f844495af0">Agent Gateway as AI Gateway for A2A, MCP, etc<=
+/p></li>
+</ul>
+<h2 local-id=3D"39a5b420df62" id=3D"AIAgentAPIGateway-DevelopmentEnvironmen=
+t">Development Environment</h2>
+<p local-id=3D"3a0ad0f4f40f">The endpoint is <code>https://dev-ai.omnisaas.=
+cn/</code></p>
+<p local-id=3D"49370c50d614">Enforced by Kong, for staging environment. It =
+now only requires a static API key.</p>
+<div id=3D"expander-1564603999" class=3D"expand-container">
+<div id=3D"expander-control-1564603999" class=3D"expand-control">
+<span class=3D"expand-control-icon"><img style=3D"vertical-align:middle;" c=
+lass=3D"expand-control-image" src=3D"30b3942d298e5ebfb3735230f00f5dfd9bfc87=
+dd5f3c96390e0233b2eb843ddc" width=3D"16" height=3D"16"></span><span class=
+=3D"expand-control-text">Development API Key</span>
+</div>
+<div id=3D"expander-content-1564603999" class=3D"expand-content">
+<div class=3D"confluence-information-macro confluence-information-macro-not=
+e">
+<span class=3D"aui-icon aui-icon-small aui-iconfont-warning confluence-info=
+rmation-macro-icon"></span>
+<div class=3D"confluence-information-macro-body">
+<p local-id=3D"188ec5056f1a">Current API key for staging is <code>963e75315=
+b2ff4ddd39692c22604955fc521bc6474faf272cc22eb0c</code>.</p>
+<p local-id=3D"376dc9e520dd">Please note that it may change any time when w=
+e proceed with further development.</p>
+<p local-id=3D"a86dfcf93783">Contact DevOps team if you have any concerns.<=
+/p>
+</div>
+</div>
+</div>
+</div>
+<p local-id=3D"a57f2b7aebf2">you can pass it by following means</p>
+<div class=3D"code panel pdl" style=3D"border-width: 1px;">
+<div class=3D"codeContent panelContent pdl">
+<pre class=3D"syntaxhighlighter-pre" data-syntaxhighlighter-params=3D"brush=
+: java; gutter: false; theme: Confluence" data-theme=3D"Confluence">- in HT=
+TP header, "apikey: ..."
+- in Query String, https://..../...?apikey=3D...</pre>
+</div>
+</div>
+<h2 local-id=3D"50fea30e8eec" id=3D"AIAgentAPIGateway-Exampleusage">Example=
+ usage</h2>
+<div class=3D"code panel pdl" style=3D"border-width: 1px;">
+<div class=3D"codeContent panelContent pdl">
+<pre class=3D"syntaxhighlighter-pre" data-syntaxhighlighter-params=3D"brush=
+: java; gutter: false; theme: Confluence" data-theme=3D"Confluence">curl ht=
+tps://dev-ai.omnisaas.cn/api/provider/qwen/v1/chat/completions  -H "apikey:=
+ ..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen-plus",  ## pay attention to the model here
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'</pre>
+</div>
+</div>
+<div class=3D"table-wrap">
+<table data-table-width=3D"1690" data-layout=3D"center" data-local-id=3D"63=
+91e8f9d4ec" class=3D"confluenceTable">
+<colgroup>
+<col style=3D"width: 338.0px;">
+<col style=3D"width: 499.0px;">
+<col style=3D"width: 851.0px;">
+</colgroup>
+<tbody>
+<tr data-local-id=3D"e0a233a4-75cc-41f7-84f1-962e1aea2fb3">
+<th data-local-id=3D"defbacec-28a0-42ab-a7c6-9fcea321f9d5" class=3D"conflue=
+nceTh">
+<p local-id=3D"96406e5677ac"><strong>Endpoint and Path</strong></p></th>
+<th data-local-id=3D"de258b39-3d4e-48ac-a9a2-7d9287c28fd9" class=3D"conflue=
+nceTh">
+<p local-id=3D"f962d3105c2a"><strong>Feature</strong></p></th>
+<th data-local-id=3D"546c5f08-8f01-45c5-a60a-75c9b5912dbc" class=3D"conflue=
+nceTh">
+<p local-id=3D"bbdbe7a6f0a3"><strong>Remarks</strong></p></th>
+</tr>
+<tr data-local-id=3D"f584d883-644e-4e0d-9247-62610224953e">
+<td data-local-id=3D"67fcd9dc-a127-449b-8892-ad6c720195aa" class=3D"conflue=
+nceTd">
+<p local-id=3D"8b46bed664b8"><code>https://dev-ai.omnisaas.cn/api/</code></=
+p></td>
+<td data-local-id=3D"903321bd-be2b-486a-9fca-74205fa3fe11" class=3D"conflue=
+nceTd">
+<p local-id=3D"ae1edd7410cf">LLM API Proxy for (usually) OpenAI Compatible =
+LLM providers</p></td>
+<td data-local-id=3D"36350036-4ef8-4c0c-8b0a-8701b2b242b4" class=3D"conflue=
+nceTd">
+<p local-id=3D"1eca764e643d">It=E2=80=99s currently in developing status, n=
+ew paths may change anytime, DO NOT RELY ON THE PATH until further informat=
+ion.</p></td>
+</tr>
+<tr data-local-id=3D"47aed734-10a3-4fa3-9c31-6805c51b0a63">
+<td data-local-id=3D"4537d047-18b0-4b91-827e-5f43d81504e7" class=3D"conflue=
+nceTd">
+<p local-id=3D"7c81d4e9688e"></p></td>
+<td data-local-id=3D"8f2e9ac2-8c6b-4d77-a45a-be076872fa27" class=3D"conflue=
+nceTd">
+<p local-id=3D"d2f4b646108f"></p></td>
+<td data-local-id=3D"0815c0c1-1a2a-401b-b2d2-a5792c683391" class=3D"conflue=
+nceTd">
+<p local-id=3D"751782019198"></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<h3 local-id=3D"b598bd3d1ad8" id=3D"AIAgentAPIGateway-Authentication">Authe=
+ntication</h3>
+<h2 local-id=3D"71affcb6d81b" id=3D"AIAgentAPIGateway-StagingEnvironment">S=
+taging Environment</h2>
+<p local-id=3D"025993563069">The endpoint is <code>https://staging-ai.omnis=
+aas.cn/</code></p>
+<p local-id=3D"b49efd54d79a">Now it has following features</p>
+<div class=3D"table-wrap">
+<table data-table-width=3D"1690" data-layout=3D"center" data-local-id=3D"62=
+d87de6-179e-4971-921b-5b41428ff3d2" class=3D"confluenceTable">
+<colgroup>
+<col style=3D"width: 338.0px;">
+<col style=3D"width: 499.0px;">
+<col style=3D"width: 851.0px;">
+</colgroup>
+<tbody>
+<tr data-local-id=3D"fc629fd897fa">
+<th data-local-id=3D"1c7c9b0e44ee" class=3D"confluenceTh">
+<p local-id=3D"868d33487f7c"><strong>Endpoint and Path</strong></p></th>
+<th data-local-id=3D"4f0eb398409d" class=3D"confluenceTh">
+<p local-id=3D"1651e1f575f6"><strong>Feature</strong></p></th>
+<th data-local-id=3D"2303a75cee6e" class=3D"confluenceTh">
+<p local-id=3D"efa6eaa24a4b"><strong>Remarks</strong></p></th>
+</tr>
+<tr data-local-id=3D"631b40bd3cbc">
+<td data-local-id=3D"54fc54def67a" class=3D"confluenceTd">
+<p local-id=3D"06c4342a45b5"><code>https://staging-ai.omnisaas.cn/api/</cod=
+e></p></td>
+<td data-local-id=3D"591523c5b3b7" class=3D"confluenceTd">
+<p local-id=3D"f4fcbc5d865b">LLM API Proxy for (usually) OpenAI Compatible =
+LLM providers</p></td>
+<td data-local-id=3D"47dfd9069d35" class=3D"confluenceTd">
+<p local-id=3D"2a601ea407aa">It=E2=80=99s currently in rather stable status=
+ for integration test with AIO frontend.</p></td>
+</tr>
+<tr data-local-id=3D"3a1a920ff894">
+<td data-local-id=3D"bb039f3d7885" class=3D"confluenceTd">
+<p local-id=3D"05e07710b8ce"></p></td>
+<td data-local-id=3D"eac019b9261d" class=3D"confluenceTd">
+<p local-id=3D"28d00e790eb3"></p></td>
+<td data-local-id=3D"8c5ecb083556" class=3D"confluenceTd">
+<p local-id=3D"fb0440f82042"></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<h3 local-id=3D"b5b2b2f5b348" id=3D"AIAgentAPIGateway-Authentication.1">Aut=
+hentication</h3>
+<p local-id=3D"e99bd2568b57">Enforced by Kong, for staging environment. It =
+now only requires a static API key.</p>
+<div id=3D"expander-657586241" class=3D"expand-container">
+<div id=3D"expander-control-657586241" class=3D"expand-control">
+<span class=3D"expand-control-icon"><img style=3D"vertical-align:middle;" c=
+lass=3D"expand-control-image" src=3D"30b3942d298e5ebfb3735230f00f5dfd9bfc87=
+dd5f3c96390e0233b2eb843ddc" width=3D"16" height=3D"16"></span><span class=
+=3D"expand-control-text">Staging API Key</span>
+</div>
+<div id=3D"expander-content-657586241" class=3D"expand-content">
+<div class=3D"confluence-information-macro confluence-information-macro-not=
+e">
+<span class=3D"aui-icon aui-icon-small aui-iconfont-warning confluence-info=
+rmation-macro-icon"></span>
+<div class=3D"confluence-information-macro-body">
+<p local-id=3D"18454abd2e51">Current API key for staging is <code>546466c6e=
+b298d7df0aeb16bca4b2d8da50ce1e07ad3976ef7228ccd</code>.</p>
+<p local-id=3D"b5b747d8a100">Please note that it may change any time when w=
+e proceed with further development.</p>
+<p local-id=3D"34d0223da7d1">Contact DevOps team if you have any concerns.<=
+/p>
+</div>
+</div>
+</div>
+</div>
+<p local-id=3D"6d2bf0841651">you can pass it by following means</p>
+<div class=3D"code panel pdl" style=3D"border-width: 1px;">
+<div class=3D"codeContent panelContent pdl">
+<pre class=3D"syntaxhighlighter-pre" data-syntaxhighlighter-params=3D"brush=
+: java; gutter: false; theme: Confluence" data-theme=3D"Confluence">- in HT=
+TP header, "apikey: ..."
+- in Query String, https://..../...?apikey=3D...</pre>
+</div>
+</div>
+<h2 local-id=3D"332d31500a34" id=3D"AIAgentAPIGateway-Exampleusage.1">Examp=
+le usage</h2>
+<div class=3D"code panel pdl" style=3D"border-width: 1px;">
+<div class=3D"codeContent panelContent pdl">
+<pre class=3D"syntaxhighlighter-pre" data-syntaxhighlighter-params=3D"brush=
+: java; gutter: false; theme: Confluence" data-theme=3D"Confluence">curl ht=
+tps://staging-ai.omnisaas.cn/api/provider/qwen/v1/chat/completions  -H "api=
+key: ..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen-plus",  ## pay attention to the model here
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'</pre>
+</div>
+</div>
+<h2 local-id=3D"b290ee81000f" id=3D"AIAgentAPIGateway-ProductionEnvironment=
+">Production Environment</h2>
+<p local-id=3D"daac141089fb">The endpoint is <code>https://staging-ai.omnis=
+aas.cn/</code></p>
+<p local-id=3D"cab7e27daa39">Now it has following features</p>
+<div class=3D"table-wrap">
+<table data-table-width=3D"1690" data-layout=3D"center" data-local-id=3D"74=
+9499d1772f" class=3D"confluenceTable">
+<colgroup>
+<col style=3D"width: 338.0px;">
+<col style=3D"width: 499.0px;">
+<col style=3D"width: 851.0px;">
+</colgroup>
+<tbody>
+<tr data-local-id=3D"ae87f6fc-bf81-4be7-a027-ba7d1605d2a0">
+<th data-local-id=3D"fea02553-fb20-4def-a360-62dbcbac03de" class=3D"conflue=
+nceTh">
+<p local-id=3D"63dce5bfaf38"><strong>Endpoint and Path</strong></p></th>
+<th data-local-id=3D"ec3cbe5c-d377-456f-928d-b9035283ee43" class=3D"conflue=
+nceTh">
+<p local-id=3D"b0e2aebee0c4"><strong>Feature</strong></p></th>
+<th data-local-id=3D"ddf2aabd-0e56-42d5-94b6-314ce3bfb857" class=3D"conflue=
+nceTh">
+<p local-id=3D"75d45427358a"><strong>Remarks</strong></p></th>
+</tr>
+<tr data-local-id=3D"bc7fbe01-c3ab-4e65-8e3d-c84654e6fc70">
+<td data-local-id=3D"f9590a56-675c-41aa-977a-248c21fd529d" class=3D"conflue=
+nceTd">
+<p local-id=3D"7ffe7606a660"><code>https://ai.omnisaas.cn/api/</code></p></=
+td>
+<td data-local-id=3D"d137b6c7-bfcb-4e47-a265-74cc58c2cbb8" class=3D"conflue=
+nceTd">
+<p local-id=3D"a8c9634ea280">LLM API Proxy for (usually) OpenAI Compatible =
+LLM providers</p></td>
+<td data-local-id=3D"80b3d396-88fb-4c74-bc1e-ab1bee0c63d4" class=3D"conflue=
+nceTd">
+<p local-id=3D"d3ab13356974">It=E2=80=99s currently in rather stable status=
+ for integration test with AIO frontend.</p></td>
+</tr>
+<tr data-local-id=3D"7ff6bba3-fd1d-47b2-ad3d-712c6e025521">
+<td data-local-id=3D"7115dc4f-068d-47f1-befc-6c45f38ec646" class=3D"conflue=
+nceTd">
+<p local-id=3D"b59e5dabf325"></p></td>
+<td data-local-id=3D"bd9a8e2c-9326-4dc9-b119-dbecfaed623d" class=3D"conflue=
+nceTd">
+<p local-id=3D"42408b853cd1"></p></td>
+<td data-local-id=3D"002e7e5a-d7ab-48f7-b103-feec01965615" class=3D"conflue=
+nceTd">
+<p local-id=3D"06d593428b1e"></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<h3 local-id=3D"e79a7b7023fb" id=3D"AIAgentAPIGateway-Authentication.2">Aut=
+hentication</h3>
+<p local-id=3D"a1a9566813bc">Enforced by Kong, for staging environment. It =
+now only requires a static API key.</p>
+<div id=3D"expander-2064189067" class=3D"expand-container">
+<div id=3D"expander-control-2064189067" class=3D"expand-control">
+<span class=3D"expand-control-icon"><img style=3D"vertical-align:middle;" c=
+lass=3D"expand-control-image" src=3D"30b3942d298e5ebfb3735230f00f5dfd9bfc87=
+dd5f3c96390e0233b2eb843ddc" width=3D"16" height=3D"16"></span><span class=
+=3D"expand-control-text">Staging API Key</span>
+</div>
+<div id=3D"expander-content-2064189067" class=3D"expand-content">
+<div class=3D"confluence-information-macro confluence-information-macro-not=
+e">
+<span class=3D"aui-icon aui-icon-small aui-iconfont-warning confluence-info=
+rmation-macro-icon"></span>
+<div class=3D"confluence-information-macro-body">
+<p local-id=3D"37d882237bc4">Current API key for staging is <code>546466c6e=
+b298d7df0aeb16bca4b2d8da50ce1e07ad3976ef7228ccd</code>.</p>
+<p local-id=3D"3b8f3b1c6927">Please note that it may change any time when w=
+e proceed with further development.</p>
+<p local-id=3D"bd618b0e1aae">Contact DevOps team if you have any concerns.<=
+/p>
+</div>
+</div>
+</div>
+</div>
+<p local-id=3D"5b5cc27ddb35">you can pass it by following means</p>
+<div class=3D"code panel pdl" style=3D"border-width: 1px;">
+<div class=3D"codeContent panelContent pdl">
+<pre class=3D"syntaxhighlighter-pre" data-syntaxhighlighter-params=3D"brush=
+: java; gutter: false; theme: Confluence" data-theme=3D"Confluence">- in HT=
+TP header, "apikey: ..."
+- in Query String, https://..../...?apikey=3D...</pre>
+</div>
+</div>
+<h2 local-id=3D"1e01aaecc655" id=3D"AIAgentAPIGateway-Exampleusage.2">Examp=
+le usage</h2>
+<div class=3D"code panel pdl" style=3D"border-width: 1px;">
+<div class=3D"codeContent panelContent pdl">
+<pre class=3D"syntaxhighlighter-pre" data-syntaxhighlighter-params=3D"brush=
+: java; gutter: false; theme: Confluence" data-theme=3D"Confluence">curl ht=
+tps://ai.omnisaas.cn/api/provider/qwen/v1/chat/completions  -H "apikey: ...=
+" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen-plus",  ## pay attention to the model here
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'</pre>
+</div>
+</div>
+<h2 local-id=3D"966f913ab8a5" id=3D"AIAgentAPIGateway-IntegratedAILLMProvid=
+ers">Integrated AI LLM Providers</h2>
+<div class=3D"table-wrap">
+<table data-table-width=3D"1595" data-layout=3D"center" data-local-id=3D"61=
+c72767-b811-4f23-811c-466fbd6e47df" class=3D"confluenceTable">
+<colgroup>
+<col style=3D"width: 233.0px;">
+<col style=3D"width: 235.0px;">
+<col style=3D"width: 503.0px;">
+<col style=3D"width: 621.0px;">
+</colgroup>
+<tbody>
+<tr data-local-id=3D"f0fff35ef0e5">
+<th data-local-id=3D"a5ab99ee423a" class=3D"confluenceTh">
+<p local-id=3D"9cb326a60b5b"><strong>AI LLM Provider</strong></p></th>
+<th data-local-id=3D"056c1d946149" class=3D"confluenceTh">
+<p local-id=3D"9898eaf96562"><strong>Endpoint and Paths</strong></p></th>
+<th data-local-id=3D"1f27ba1aeb72" class=3D"confluenceTh">
+<p local-id=3D"7949f3a49b8b"><strong>Model examples (please find more in of=
+ficial doc)</strong></p></th>
+<th data-local-id=3D"546ec413990c" class=3D"confluenceTh">
+<p local-id=3D"a416d08c0c7d"><strong>Official Doc Reference</strong></p></t=
+h>
+</tr>
+<tr data-local-id=3D"5d9ec06a608b">
+<td data-local-id=3D"febcd825b6fa" class=3D"confluenceTd">
+<p local-id=3D"14b0f60cf6c2">Doubao (=E8=B1=86=E5=8C=85)</p></td>
+<td data-local-id=3D"38c88e3d3a03" class=3D"confluenceTd">
+<p local-id=3D"2a46a2eebff1"><code>/api/provider/doubao</code></p></td>
+<td data-local-id=3D"827c7e356072" class=3D"confluenceTd">
+<p local-id=3D"6868e28c1334"><code>doubao-seed-1-6-lite-251015, doubao-1-5-=
+pro-32k-250115</code></p></td>
+<td data-local-id=3D"fed33a51ddf3" class=3D"confluenceTd">
+<p local-id=3D"a65f08578525"><a class=3D"external-link" href=3D"https://api=
+.volcengine.com/api-explorer/?action=3DChatCompletions&amp;groupName=3D%E5%=
+AF%B9%E8%AF%9D%28Chat%29%20API&amp;serviceCode=3Dark&amp;version=3D2024-01-=
+01" rel=3D"nofollow">api-explorer</a> <a class=3D"external-link" href=3D"ht=
+tps://www.volcengine.com/docs/82379/1494384?lang=3Dzh" rel=3D"nofollow">doc=
+</a></p></td>
+</tr>
+<tr data-local-id=3D"ec66bbc2e74a">
+<td data-local-id=3D"dcaf799e1ee8" class=3D"confluenceTd">
+<p local-id=3D"80ff1fd2f871">Deepseek</p></td>
+<td data-local-id=3D"ef4f8e20a53b" class=3D"confluenceTd">
+<p local-id=3D"2106de20bcc0"><code>/api/provider/deepseek</code></p></td>
+<td data-local-id=3D"4ba8256b47c9" class=3D"confluenceTd">
+<p local-id=3D"3917158a44de"><code>deepseek-chat, deepseek-reasoner</code><=
+/p></td>
+<td data-local-id=3D"077cca95d3ce" class=3D"confluenceTd">
+<p local-id=3D"4f5bef189205"><a class=3D"external-link" href=3D"https://api=
+-docs.deepseek.com/zh-cn/quick_start/pricing" rel=3D"nofollow">model</a> <a=
+ class=3D"external-link" href=3D"https://api-docs.deepseek.com/zh-cn/" rel=
+=3D"nofollow">doc</a></p></td>
+</tr>
+<tr data-local-id=3D"b3962247bc19">
+<td data-local-id=3D"72faa2b2e3b3" class=3D"confluenceTd">
+<p local-id=3D"64dbcdb7c726">Yuanbao (=E8=85=BE=E8=AE=AF=E5=85=83=E5=AE=9D)=
+</p></td>
+<td data-local-id=3D"580e42ea1c6a" class=3D"confluenceTd">
+<p local-id=3D"23ff0c49db0a"><code>/api/provider/yuanbao</code></p></td>
+<td data-local-id=3D"1190f772a948" class=3D"confluenceTd">
+<p local-id=3D"73fee6391de6"><code>hunyuan-turbos-latest, hunyuan-2.0-instr=
+uct-20251111</code></p></td>
+<td data-local-id=3D"99d1f94553b1" class=3D"confluenceTd">
+<p local-id=3D"e53924883be3"><a class=3D"external-link" href=3D"https://clo=
+ud.tencent.com/document/product/1729/104753" rel=3D"nofollow">model</a> <a =
+class=3D"external-link" href=3D"https://cloud.tencent.com/document/product/=
+1729/111007#6d9d0237-cb50-42f7-917f-87344d28c8a9" rel=3D"nofollow">doc</a><=
+/p></td>
+</tr>
+<tr data-local-id=3D"fb864d0027bb">
+<td data-local-id=3D"24e005e75cea" class=3D"confluenceTd">
+<p local-id=3D"9f6653a8d3e1">Qwen =E9=80=9A=E4=B9=89=E5=8D=83=E9=97=AE</p><=
+/td>
+<td data-local-id=3D"c47574741bd6" class=3D"confluenceTd">
+<p local-id=3D"d5fb0612e166"><code>/api/provider/qwen</code></p></td>
+<td data-local-id=3D"664c2202d52b" class=3D"confluenceTd">
+<p local-id=3D"301cef6eed21"><code>qwen3-max, qwen-plus</code></p></td>
+<td data-local-id=3D"d2af88fd35e1" class=3D"confluenceTd">
+<p local-id=3D"6723bbd6f233"><a class=3D"external-link" href=3D"https://hel=
+p.aliyun.com/zh/model-studio/models?spm=3Da2c4g.11186623.0.0.bd256a1b8Ggix5=
+#9f8890ce29g5u" rel=3D"nofollow">model</a> <a class=3D"external-link" href=
+=3D"https://bailian.console.aliyun.com/cn-beijing/?spm=3D5176.12818093_47.c=
+onsole-base_product-drawer-right.dproducts-and-services-sfm.3be916d0lRvEmm&=
+amp;tab=3Dapi#/api/?type=3Dmodel&amp;url=3D3016807" rel=3D"nofollow">doc</a=
+></p></td>
+</tr>
+<tr data-local-id=3D"b5c81c7c0974">
+<td data-local-id=3D"633e76177660" class=3D"confluenceTd">
+<p local-id=3D"05fed356f619">Kimi</p></td>
+<td data-local-id=3D"70ac18f19418" class=3D"confluenceTd">
+<p local-id=3D"b11a649ace53"><code>/api/provider/kimi</code></p></td>
+<td data-local-id=3D"3267bc16ee59" class=3D"confluenceTd">
+<p local-id=3D"b8d2d89a7a86"><code>kimi-k2.5, kimi-k2-0905-preview</code></=
+p></td>
+<td data-local-id=3D"56daaf19149c" class=3D"confluenceTd">
+<p local-id=3D"601db3637bda"><a class=3D"external-link" href=3D"https://pla=
+tform.moonshot.cn/docs/api/chat#%E5%85%AC%E5%BC%80%E7%9A%84%E6%9C%8D%E5%8A%=
+A1%E5%9C%B0%E5%9D%80" rel=3D"nofollow">doc</a></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class=3D"confluence-information-macro confluence-information-macro-not=
+e">
+<span class=3D"aui-icon aui-icon-small aui-iconfont-warning confluence-info=
+rmation-macro-icon"></span>
+<div class=3D"confluence-information-macro-body">
+<p local-id=3D"af87a627d35d">Please be advised, for the time being, above e=
+ndpoint and paths in Agent Gateway are only integrated and support Chat API=
+ (not Response API).</p>
+<p local-id=3D"c8bac5eb60bd">Additionally, AQ (=E8=9A=82=E8=9A=81=E9=98=BF=
+=E7=A6=8F) doesn=E2=80=99t support API access at the moment.</p>
+</div>
+</div>
+<p local-id=3D"7512654d2144"></p>
+<div class=3D"panel" style=3D"background-color: #EAE6FF;border-color: #998D=
+D9;border-width: 1px;">
+<div class=3D"panelContent" style=3D"background-color: #EAE6FF;">
+<p local-id=3D"af0a6750f0b5">Due to the nature of Agent Gateway, API routes=
+ are not strictly mapped to upstream AI provider endpoints. That means, fol=
+lowing paths work like</p>
+<div class=3D"code panel pdl" style=3D"border-width: 1px;">
+<div class=3D"codeContent panelContent pdl">
+<pre class=3D"syntaxhighlighter-pre" data-syntaxhighlighter-params=3D"brush=
+: java; gutter: false; theme: Confluence" data-theme=3D"Confluence"># paths=
+ after designated are just ignored in Agent Gateway,=20
+#following paths are considered the same
+/api/provider/&lt;provider&gt;/v1/chat/completions
+/api/provider/&lt;provider&gt;/
+/api/provider/&lt;provider&gt;/you/can/actually/put/anything/here
+
+# for compatible with previous design,=20
+# root path works like before and redirect request to qwen
+# followings work in same way
+/api/
+/api/provider/=20
+/api/provider/qwen
+/api/provider/qwen/anything</pre>
+</div>
+</div>
+</div>
+</div>
+<h2 local-id=3D"4f688896585d" id=3D"AIAgentAPIGateway-Management">Managemen=
+t</h2>
+<ul local-id=3D"758339970cbc">
+<li local-id=3D"c35b8a2a429c">
+<p local-id=3D"0ffcaeee294e">environment: in k8s omnisaas staging cluster</=
+p></li>
+<li local-id=3D"7fa49e1ff868">
+<p local-id=3D"07746682b67b">namespace: <code>ai-demo</code></p></li>
+<li local-id=3D"5dd9eb7e3bc0">
+<p local-id=3D"e749c00f6576">how to access agent-gateway ui</p></li>
+<li local-id=3D"a6a3a4a77ef4">
+<div class=3D"code panel pdl" style=3D"border-width: 1px;">
+<div class=3D"codeContent panelContent pdl">
+<pre class=3D"syntaxhighlighter-pre" data-syntaxhighlighter-params=3D"brush=
+: java; gutter: false; theme: Confluence" data-theme=3D"Confluence">kubectl=
+ -n ai-demo port-forward svc/agent-gateway --address 0.0.0.0 15000:15000
+# now try accessing http://localhost:15000/</pre>
+</div>
+</div></li>
+</ul>
+    </div>
+</body>
+</html>
+------=_Part_6_2000138341.1775171922870
+Content-Type: application/octet-stream
+Content-Transfer-Encoding: base64
+Content-Location: file:///C:/30b3942d298e5ebfb3735230f00f5dfd9bfc87dd5f3c96390e0233b2eb843ddc
+
+iVBORw0KGgoAAAANSUhEUgAAABAAAAAQBAMAAADt3eJSAAAAA3NCSVQICAjb4U/gAAAAFVBMVEX/
+//9wcHBwcHBwcHBwcHBwcHBwcHA3RenHAAAAB3RSTlMAZoiZzN3/SzZomQAAAAlwSFlzAAALEgAA
+CxIB0t1+/AAAABx0RVh0U29mdHdhcmUAQWRvYmUgRmlyZXdvcmtzIENTNui8sowAAAAUdEVYdENy
+ZWF0aW9uIFRpbWUANi8xLzEzOKlF0AAAACFJREFUCJljYCATsCgwqIAZTMnMyRAhsTABCIMxkVxT
+GQCLcwHyUKXpLgAAAABJRU5ErkJggg==
+------=_Part_6_2000138341.1775171922870--

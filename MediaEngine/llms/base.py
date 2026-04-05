@@ -55,6 +55,8 @@ class LLMClient:
         }
         if base_url:
             client_kwargs["base_url"] = base_url
+            if "omnisaas.cn" in base_url:
+                client_kwargs["default_headers"] = {"apikey": api_key}
         self.client = OpenAI(**client_kwargs)
 
     @with_retry(LLM_RETRY_CONFIG)

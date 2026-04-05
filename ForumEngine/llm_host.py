@@ -45,10 +45,14 @@ class ForumHost:
 
         self.base_url = base_url or settings.FORUM_HOST_BASE_URL
 
-        self.client = OpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url
-        )
+        client_kwargs = {
+            "api_key": self.api_key,
+            "base_url": self.base_url
+        }
+        if self.base_url and "omnisaas.cn" in self.base_url:
+            client_kwargs["default_headers"] = {"apikey": self.api_key}
+        
+        self.client = OpenAI(**client_kwargs)
         self.model = model_name or settings.FORUM_HOST_MODEL_NAME  # Use configured model
 
         # Track previous summaries to avoid duplicates
