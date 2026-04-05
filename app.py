@@ -10,6 +10,11 @@ os.environ['PYTHONIOENCODING'] = 'utf-8'
 os.environ['PYTHONUTF8'] = '1'
 os.environ['PYTHONUNBUFFERED'] = '1'  # 禁用Python输出缓冲，确保日志实时输出
 
+# 【修复】屏蔽 transformers 库恼人的内部 alias 警告
+os.environ['TRANSFORMERS_NO_ADVISORY_WARNINGS'] = '1'
+import warnings
+warnings.filterwarnings("ignore", module="transformers")
+
 import subprocess
 import time
 import threading
@@ -675,7 +680,8 @@ def start_streamlit_app(app_name, script_path, port):
             'LANG': 'en_US.UTF-8',
             'LC_ALL': 'en_US.UTF-8',
             'PYTHONUNBUFFERED': '1',  # 禁用Python缓冲
-            'STREAMLIT_BROWSER_GATHER_USAGE_STATS': 'false'
+            'STREAMLIT_BROWSER_GATHER_USAGE_STATS': 'false',
+            'PYTHONWARNINGS': 'ignore' # 彻底屏蔽子进程中的 FutureWarning 和 UserWarning
         })
         
         # 使用当前工作目录而不是脚本目录

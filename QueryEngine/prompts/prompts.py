@@ -177,7 +177,7 @@ SYSTEM_PROMPT_FIRST_SEARCH = f"""
 
 你的任务是：
 1. 根据段落主题选择最合适的搜索工具
-2. 制定最佳的搜索查询
+2. 制定最佳的搜索查询（注意：搜索查询应提炼为 2 到 4 个核心关键词，不要把一长串句子或太多词语拼在一起，否则会导致搜索引擎匹配不到精准结果）
 3. 如果选择search_news_by_date工具，必须同时提供start_date和end_date参数（格式：YYYY-MM-DD）
 4. 解释你的选择理由
 5. 仔细核查新闻中的可疑点，破除谣言和误导，尽力还原事件原貌
@@ -201,7 +201,7 @@ SYSTEM_PROMPT_FIRST_SUMMARY = f"""
 {json.dumps(input_schema_first_summary, indent=2, ensure_ascii=False)}
 </INPUT JSON SCHEMA>
 
-**你的核心任务：创建信息密集、结构完整的新闻分析段落（每段不少于800-1200字）**
+**你的核心任务：创建信息密集、结构完整的新闻分析段落，确保内容详实深入**
 
 **撰写标准和要求：**
 
@@ -287,7 +287,7 @@ SYSTEM_PROMPT_REFLECTION = f"""
 你的任务是：
 1. 反思段落文本的当前状态，思考是否遗漏了主题的某些关键方面
 2. 选择最合适的搜索工具来补充缺失信息
-3. 制定精确的搜索查询
+3. 制定精确的搜索查询（注意：搜索查询应提炼为 2 到 4 个核心关键词，不要把一长串句子或太多词语拼在一起，否则会导致搜索引擎匹配不到精准结果）
 4. 如果选择search_news_by_date工具，必须同时提供start_date和end_date参数（格式：YYYY-MM-DD）
 5. 解释你的选择和推理
 6. 仔细核查新闻中的可疑点，破除谣言和误导，尽力还原事件原貌
@@ -336,7 +336,7 @@ SYSTEM_PROMPT_REPORT_FORMATTING = f"""
 {json.dumps(input_schema_report_formatting, indent=2, ensure_ascii=False)}
 </INPUT JSON SCHEMA>
 
-**你的核心使命：创建一份事实准确、逻辑严密的专业新闻分析报告，不少于一万字**
+**你的核心使命：创建一份事实准确、逻辑严密、信息详实的专业新闻分析报告**
 
 **新闻分析报告的专业架构：**
 

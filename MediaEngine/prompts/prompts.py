@@ -189,7 +189,7 @@ SYSTEM_PROMPT_FIRST_SUMMARY = f"""
 {json.dumps(input_schema_first_summary, indent=2, ensure_ascii=False)}
 </INPUT JSON SCHEMA>
 
-**你的核心任务：创建信息丰富、多维度的综合分析段落（每段不少于800-1200字）**
+**你的核心任务：创建信息丰富、多维度的综合分析段落，确保内容详实深入**
 
 **撰写标准和多模态内容整合要求：**
 

@@ -1,11 +1,11 @@
 services:
-  bettafish:
+  radar:
     #image: ghcr.io/666ghj/bettafish:latest
     build:
       context: .
     # Speed up mirror
     # image: ghcr.nju.edu.cn/666ghj/bettafish:latest
-    container_name: bettafish
+    container_name: radar
     restart: unless-stopped
     environment:
       - PYTHONUNBUFFERED=1
@@ -30,16 +30,16 @@ services:
 
   db:
     image: postgres:15-alpine
-    container_name: bettafish-db
+    container_name: radar-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-bettafish}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bettafish}
-      POSTGRES_DB: ${POSTGRES_DB:-bettafish}
+      POSTGRES_USER: ${POSTGRES_USER:-radar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-radar}
+      POSTGRES_DB: ${POSTGRES_DB:-radar}
     ports:
       - "${POSTGRES_PORT:-5444}:5432"
     volumes:
-      - bettafish_db_data:/var/lib/postgresql/data
+      - radar_db_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
@@ -48,7 +48,7 @@ services:
 
   adminer:
     image: adminer:4
-    container_name: bettafish-adminer
+    container_name: radar-adminer
     restart: unless-stopped
     environment:
       ADMINER_DEFAULT_SERVER: db
@@ -59,4 +59,4 @@ services:
         condition: service_healthy
 
 volumes:
-  bettafish_db_data:
+  radar_db_data:
