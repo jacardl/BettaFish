@@ -307,6 +307,11 @@ SYSTEM_PROMPT_CHAPTER_JSON = f"""
 你是Report Engine的“章节装配工厂”，负责把不同章节的素材铣削成
 符合《可执行JSON契约(IR)》的章节JSON。稍后我会提供单个章节要点、
 全局数据与风格指令，你需要：
+
+**核心撰写原则（防幻觉护栏 Anti-Hallucination）：**
+- **绝对禁止编造**：如果你在提供的多源报告素材中找不到能够支撑该小节结论的具体数据、评论、新闻事件或数字，你必须在该段落中明确回复“未检索到相关数据”，绝对禁止自行编造或补充内容。
+- **100%忠于原文**：你所有的事实、引语、图表数据必须 100% 来源于提供的搜索结果。
+
 1. 完全遵循IR版本 {IR_VERSION} 的结构，严禁输出HTML或Markdown。
 2. 仅使用以下Block类型：{', '.join(ALLOWED_BLOCK_TYPES)}；其中图表用block.type=widget并填充Chart.js配置。
 3. 所有段落都放入paragraph.inlines，混排样式通过marks表示（bold/italic/color/link等）。
@@ -390,9 +395,10 @@ SYSTEM_PROMPT_CHAPTER_JSON_RECOVERY = f"""
 请遵守：
 1. 章节必须满足IR版本 {IR_VERSION} 规范，block.type 仅能使用：{', '.join(ALLOWED_BLOCK_TYPES)}；
 2. paragraph.inlines中的marks仅可出现：{', '.join(ALLOWED_INLINE_MARKS)}，并保留原始文字顺序；
-3. 请以 generationPayload 中的 section 信息为主导，heading.text 与 anchor 必须与章节slug保持一致；
-4. 仅对JSON语法/字段/嵌套做最小必要修复，不改写事实与结论；
-5. 输出严格遵循 {{\"chapter\": {{...}}}} 格式，不添加说明。
+3. **防幻觉护栏 (Anti-Hallucination)**：绝对禁止自行编造数据、案例、用户ID或新闻事件。如果某个小节在三个引擎的报告中均找不到相关素材，你必须在该小节中明确写出“未检索到相关数据”，并在 `citationList` 中跳过该条目。你所有的引用必须 100% 来源于提供的搜索结果（`generationPayload` 中提供的报告文本）。
+4. 请以 generationPayload 中的 section 信息为主导，heading.text 与 anchor 必须与章节slug保持一致；
+5. 仅对JSON语法/字段/嵌套做最小必要修复，不改写事实与结论；
+6. 输出严格遵循 {{"chapter": {{...}}}} 格式，不添加说明。
 
 输入字段：
 - generationPayload：章节原始需求与素材，请完整遵守；

@@ -128,6 +128,9 @@ def main():
 
         # 执行研究
         execute_research(query, config)
+    elif 'final_report' in st.session_state and 'agent' in st.session_state:
+        # 如果已经执行过，保持显示结果
+        display_results(st.session_state.agent, st.session_state.final_report)
 
 
 def execute_research(query: str, config: Settings):
@@ -177,6 +180,9 @@ def execute_research(query: str, config: Settings):
         progress_bar.progress(100)
 
         status_text.text("研究完成！")
+        
+        # 将结果存入 session_state 防止刷新丢失
+        st.session_state.final_report = final_report
 
         # 显示结果
         display_results(agent, final_report)
