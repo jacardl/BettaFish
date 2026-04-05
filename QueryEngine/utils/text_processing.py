@@ -143,56 +143,16 @@ def fix_incomplete_json(text: str) -> str:
     Returns:
         修复后的JSON文本，如果无法修复则返回空字符串
     """
-    # 移除多余的逗号和空白
-    text = re.sub(r',\s*}', '}', text)
-    text = re.sub(r',\s*]', ']', text)
-    
-    # 检查是否已经是有效的JSON
+    import json_repair
     try:
-        json.loads(text)
-        return text
-    except JSONDecodeError:
-        pass
+        # json_repair.repair_json 会自动补全缺失的引号、括号等
+        repaired = json_repair.repair_json(text, return_objects=False)
+        if repaired:
+            return repaired
+    except Exception as e:
+        print(f"json_repair 修复失败: {e}")
     
-    # 检查是否缺少开头的数组符号
-    if text.strip().startswith('{') and not text.strip().startswith('['):
-        # 如果以对象开始，尝试包装成数组
-        if text.count('{') > 1:
-            # 多个对象，包装成数组
-            text = '[' + text + ']'
-        else:
-            # 单个对象，包装成数组
-            text = '[' + text + ']'
-    
-    # 检查是否缺少结尾的数组符号
-    if text.strip().endswith('}') and not text.strip().endswith(']'):
-        # 如果以对象结束，尝试包装成数组
-        if text.count('}') > 1:
-            # 多个对象，包装成数组
-            text = '[' + text + ']'
-        else:
-            # 单个对象，包装成数组
-            text = '[' + text + ']'
-    
-    # 检查括号是否匹配
-    open_braces = text.count('{')
-    close_braces = text.count('}')
-    open_brackets = text.count('[')
-    close_brackets = text.count(']')
-    
-    # 修复不匹配的括号
-    if open_braces > close_braces:
-        text += '}' * (open_braces - close_braces)
-    if open_brackets > close_brackets:
-        text += ']' * (open_brackets - close_brackets)
-    
-    # 验证修复后的JSON是否有效
-    try:
-        json.loads(text)
-        return text
-    except JSONDecodeError:
-        # 如果仍然无效，尝试更激进的修复
-        return fix_aggressive_json(text)
+    return ""
 
 
 def fix_aggressive_json(text: str) -> str:

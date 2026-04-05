@@ -29,6 +29,13 @@ def _build_database_url() -> str:
     dialect: str = (settings.DB_DIALECT or "mysql").lower()
     host: str = settings.DB_HOST or ""
     port: str = str(settings.DB_PORT or "")
+    
+    # 自动探测 Docker 环境，修正本地回环地址
+    if os.path.exists("/.dockerenv") and host in ("localhost", "127.0.0.1"):
+        host = "db"
+        if port == "5444":
+            port = "5432"
+
     user: str = settings.DB_USER or ""
     password: str = settings.DB_PASSWORD or ""
     db_name: str = settings.DB_NAME or ""

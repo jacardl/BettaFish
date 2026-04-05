@@ -669,7 +669,8 @@ def start_streamlit_app(app_name, script_path, port):
             '--browser.gatherUsageStats', 'false',
             # '--logger.level', 'debug',  # 增加日志详细程度
             '--logger.level', 'info',
-            '--server.enableCORS', 'false'
+            '--server.enableCORS', 'false',
+            '--server.enableXsrfProtection', 'false'
         ]
         
         # 设置环境变量确保UTF-8编码和减少缓冲
@@ -681,7 +682,9 @@ def start_streamlit_app(app_name, script_path, port):
             'LC_ALL': 'en_US.UTF-8',
             'PYTHONUNBUFFERED': '1',  # 禁用Python缓冲
             'STREAMLIT_BROWSER_GATHER_USAGE_STATS': 'false',
-            'PYTHONWARNINGS': 'ignore' # 彻底屏蔽子进程中的 FutureWarning 和 UserWarning
+            'PYTHONWARNINGS': 'ignore', # 彻底屏蔽子进程中的 FutureWarning 和 UserWarning
+            'TRANSFORMERS_VERBOSITY': 'error', # 强制 transformers 仅输出错误级别日志
+            'TRANSFORMERS_NO_ADVISORY_WARNINGS': '1'
         })
         
         # 使用当前工作目录而不是脚本目录

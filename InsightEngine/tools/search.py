@@ -91,7 +91,7 @@ class MediaCrawlerDB:
             return loop.run_until_complete(fetch_all(query, params))
         
         except Exception as e:
-            logger.exception(f"数据库查询时发生错误: {e}")
+            logger.error(f"数据库查询时发生错误: {e}")
             return []
 
     @staticmethod
