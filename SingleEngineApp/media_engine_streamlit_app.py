@@ -6,6 +6,14 @@ Streamlit Web界面
 import os
 import sys
 import streamlit as st
+from dotenv import load_dotenv
+
+load_dotenv()
+if os.getenv("HF_ENDPOINT"):
+    os.environ["HF_ENDPOINT"] = os.getenv("HF_ENDPOINT")
+elif "HF_ENDPOINT" not in os.environ:
+    os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
 from datetime import datetime
 import json
 import locale

@@ -23,6 +23,7 @@ output_schema_report_structure = {
 input_schema_first_search = {
     "type": "object",
     "properties": {
+        "report_topic": {"type": "string", "description": "整个报告的整体主题/查询词"},
         "title": {"type": "string"},
         "content": {"type": "string"}
     }
@@ -71,6 +72,7 @@ output_schema_first_summary = {
 input_schema_reflection = {
     "type": "object",
     "properties": {
+        "report_topic": {"type": "string", "description": "整个报告的整体主题/查询词"},
         "title": {"type": "string"},
         "content": {"type": "string"},
         "paragraph_latest_state": {"type": "string"}
@@ -236,6 +238,7 @@ SYSTEM_PROMPT_FIRST_SEARCH = f"""
 
 **搜索词设计核心原则**：
 - **想象网友怎么说**：如果你是个普通网友，你会怎么讨论这个话题？
+- **紧扣主题（强制要求）**：你的所有搜索词都必须包含报告整体主题（`report_topic`）的核心实体或相关别名，绝不能生成空泛的搜索词（如“最近大家在聊什么”或“最近火了什么”），否则将搜索到与本报告无关的数据。
 - **避免学术词汇**：杜绝"舆情"、"传播"、"倾向"等专业术语
 - **使用具体词汇**：用具体的事件、人名、地名、现象描述
 - **包含情感表达**：如"支持"、"反对"、"担心"、"愤怒"、"点赞"等
@@ -383,6 +386,7 @@ SYSTEM_PROMPT_REFLECTION = f"""
 3. **精准补充查询**：
    - 选择最能填补信息缺口的查询工具
    - **设计接地气的搜索关键词**：
+     * **紧扣主题（强制要求）**：所有补充的搜索关键词必须包含报告的整体主题（`report_topic`），绝不能生成无关紧要的通用词汇。
      * 避免继续使用官方化、书面化的词汇
      * 思考网民会用什么词来表达这个观点
      * 使用具体的、有情感色彩的词汇

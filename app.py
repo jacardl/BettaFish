@@ -4,11 +4,21 @@ Flask主应用 - 统一管理三个Streamlit应用
 
 import os
 import sys
+from dotenv import load_dotenv
+
+# 加载环境变量
+load_dotenv()
 
 # 【修复】尽早设置环境变量，确保所有模块都使用无缓冲模式
 os.environ['PYTHONIOENCODING'] = 'utf-8'
 os.environ['PYTHONUTF8'] = '1'
 os.environ['PYTHONUNBUFFERED'] = '1'  # 禁用Python输出缓冲，确保日志实时输出
+
+# 【修复】设置 HF_ENDPOINT，保证国内下载 HuggingFace 模型不卡死
+if os.getenv("HF_ENDPOINT"):
+    os.environ["HF_ENDPOINT"] = os.getenv("HF_ENDPOINT")
+elif "HF_ENDPOINT" not in os.environ:
+    os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
 # 【修复】屏蔽 transformers 库恼人的内部 alias 警告
 os.environ['TRANSFORMERS_NO_ADVISORY_WARNINGS'] = '1'

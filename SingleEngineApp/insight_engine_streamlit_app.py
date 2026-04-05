@@ -10,6 +10,13 @@ from datetime import datetime
 import json
 import locale
 from loguru import logger
+from dotenv import load_dotenv
+
+load_dotenv()
+if os.getenv("HF_ENDPOINT"):
+    os.environ["HF_ENDPOINT"] = os.getenv("HF_ENDPOINT")
+elif "HF_ENDPOINT" not in os.environ:
+    os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
 # 设置UTF-8编码环境
 os.environ['PYTHONIOENCODING'] = 'utf-8'

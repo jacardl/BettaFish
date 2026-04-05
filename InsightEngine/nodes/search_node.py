@@ -35,11 +35,11 @@ class FirstSearchNode(BaseNode):
         if isinstance(input_data, str):
             try:
                 data = json.loads(input_data)
-                return "title" in data and "content" in data
+                return "title" in data and "content" in data and "report_topic" in data
             except JSONDecodeError:
                 return False
         elif isinstance(input_data, dict):
-            return "title" in input_data and "content" in input_data
+            return "title" in input_data and "content" in input_data and "report_topic" in input_data
         return False
     
     def run(self, input_data: Any, **kwargs) -> Dict[str, str]:
@@ -55,7 +55,7 @@ class FirstSearchNode(BaseNode):
         """
         try:
             if not self.validate_input(input_data):
-                raise ValueError("输入数据格式错误，需要包含title和content字段")
+                raise ValueError("输入数据格式错误，需要包含report_topic、title和content字段")
             
             # 准备输入数据
             if isinstance(input_data, str):
@@ -168,12 +168,12 @@ class ReflectionNode(BaseNode):
         if isinstance(input_data, str):
             try:
                 data = json.loads(input_data)
-                required_fields = ["title", "content", "paragraph_latest_state"]
+                required_fields = ["report_topic", "title", "content", "paragraph_latest_state"]
                 return all(field in data for field in required_fields)
             except JSONDecodeError:
                 return False
         elif isinstance(input_data, dict):
-            required_fields = ["title", "content", "paragraph_latest_state"]
+            required_fields = ["report_topic", "title", "content", "paragraph_latest_state"]
             return all(field in input_data for field in required_fields)
         return False
     
@@ -190,7 +190,7 @@ class ReflectionNode(BaseNode):
         """
         try:
             if not self.validate_input(input_data):
-                raise ValueError("输入数据格式错误，需要包含title、content和paragraph_latest_state字段")
+                raise ValueError("输入数据格式错误，需要包含report_topic、title、content和paragraph_latest_state字段")
             
             # 准备输入数据
             if isinstance(input_data, str):

@@ -33,7 +33,7 @@ from .tools import (
 from .utils import format_search_results_for_prompt
 from .utils.config import Settings, settings
 
-ENABLE_CLUSTERING: bool = True  # 是否启用聚类采样
+ENABLE_CLUSTERING: bool = False  # 已关闭聚类采样，全网API检索默认返回高质量排序结果
 MAX_CLUSTERED_RESULTS: int = 50  # 聚类后最大返回结果数
 RESULTS_PER_CLUSTER: int = 5  # 每个聚类返回的结果数
 
@@ -588,7 +588,11 @@ class DeepSearchAgent:
         paragraph = self.state.paragraphs[paragraph_index]
 
         # 准备搜索输入
-        search_input = {"title": paragraph.title, "content": paragraph.content}
+        search_input = {
+            "report_topic": self.state.query,
+            "title": paragraph.title,
+            "content": paragraph.content
+        }
 
         # 生成搜索查询和工具选择
         logger.info("  - 生成搜索查询...")
@@ -742,6 +746,7 @@ class DeepSearchAgent:
 
             # 准备反思输入
             reflection_input = {
+                "report_topic": self.state.query,
                 "title": paragraph.title,
                 "content": paragraph.content,
                 "paragraph_latest_state": paragraph.research.latest_summary,

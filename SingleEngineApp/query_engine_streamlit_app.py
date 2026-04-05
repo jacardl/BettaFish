@@ -24,6 +24,14 @@ except locale.Error:
     except locale.Error:
         pass
 
+from dotenv import load_dotenv
+
+load_dotenv()
+if os.getenv("HF_ENDPOINT"):
+    os.environ["HF_ENDPOINT"] = os.getenv("HF_ENDPOINT")
+elif "HF_ENDPOINT" not in os.environ:
+    os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
 # 添加src目录到Python路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
