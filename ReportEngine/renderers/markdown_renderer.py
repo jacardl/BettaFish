@@ -124,6 +124,7 @@ class MarkdownRenderer:
             "kpiGrid": self._render_kpi_grid,
             "widget": self._render_widget,
             "toc": lambda b: "",
+            "citationList": self._render_citation_list,
         }
         if block_type in handlers:
             return handlers[block_type](block)
@@ -582,6 +583,35 @@ class MarkdownRenderer:
             data_preview = ""
         note = "> 数据组件暂不支持Markdown渲染"
         return f"{title_prefix}{note}" + (f"\n\n```\n{data_preview}\n```" if data_preview else "")
+
+    def _render_citation_list(self, block: Dict[str, Any]) -> str:
+        """渲染文末引用信息源列表为Markdown"""
+        items = block.get("items", [])
+        if not items:
+            return ""
+
+        lines = [
+            "---",
+            "### 参考资料 / 引用来源",
+            ""
+        ]
+
+        for item in items:
+            index = item.get("index", "")
+            title = self._escape_text(item.get("title", ""))
+            url = item.get("url", "")
+            source = self._escape_text(item.get("source", ""))
+            pub_date = self._escape_text(item.get("publishedAt", ""))
+
+            source_text = f" - {source}" if source else ""
+            date_text = f" ({pub_date})" if pub_date else ""
+
+            if url:
+                lines.append(f"{index}. [{title}]({url}){source_text}{date_text}")
+            else:
+                lines.append(f"{index}. {title}{source_text}{date_text}")
+
+        return "\n".join(lines)
 
     # ===== 工具方法 =====
 

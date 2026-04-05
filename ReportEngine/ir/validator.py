@@ -334,5 +334,24 @@ class IRValidator:
             if m_type not in ALLOWED_INLINE_MARKS:
                 errors.append(f"{path}.marks[{m_idx}].type 不被支持: {m_type}")
 
+    def _validate_toc_block(self, block: Dict[str, Any], path: str, errors: List[str]):
+        """TOC区块深度需在1-4之间"""
+        depth = block.get("depth")
+        if depth is not None and not (isinstance(depth, int) and 1 <= depth <= 4):
+            errors.append(f"{path}.depth 必须是1到4之间的整数")
+
+    def _validate_citationList_block(self, block: Dict[str, Any], path: str, errors: List[str]):
+        """引用清单校验"""
+        items = block.get("items")
+        if not isinstance(items, list):
+            errors.append(f"{path}.items 必须是数组")
+            return
+        for i, item in enumerate(items):
+            if not isinstance(item, dict):
+                errors.append(f"{path}.items[{i}] 必须是对象")
+                continue
+            if "index" not in item or "title" not in item or "url" not in item:
+                errors.append(f"{path}.items[{i}] 必须包含 index, title, url")
+
 
 __all__ = ["IRValidator"]

@@ -45,6 +45,7 @@ ALLOWED_BLOCK_TYPES: List[str] = [
     "kpiGrid",
     "widget",
     "toc",
+    "citationList",
 ]
 
 ENGINE_AGENT_TITLES: Dict[str, str] = {
@@ -479,6 +480,31 @@ toc_block: Dict[str, Any] = {
     "additionalProperties": True,
 }
 
+citation_list_block: Dict[str, Any] = {
+    "title": "CitationListBlock",
+    "type": "object",
+    "properties": {
+        "type": {"const": "citationList"},
+        "items": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "index": {"type": "integer"},
+                    "title": {"type": "string"},
+                    "url": {"type": "string"},
+                    "source": {"type": "string"},
+                    "publishedAt": {"type": "string"},
+                },
+                "required": ["index", "title", "url"],
+                "additionalProperties": True,
+            },
+        },
+    },
+    "required": ["type", "items"],
+    "additionalProperties": True,
+}
+
 block_variants: List[Dict[str, Any]] = [
     heading_block,
     paragraph_block,
@@ -494,6 +520,7 @@ block_variants: List[Dict[str, Any]] = [
     kpi_block,
     widget_block,
     toc_block,
+    citation_list_block,
     swot_block,
     pest_block,
 ]

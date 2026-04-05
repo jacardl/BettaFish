@@ -713,6 +713,40 @@ class HTMLRenderer:
 </nav>
 """.strip()
 
+    def _render_citation_list(self, block: Dict[str, Any]) -> str:
+        """渲染文末引用信息源列表"""
+        items = block.get("items", [])
+        if not items:
+            return ""
+
+        lines = [
+            '<div class="citation-list" style="margin-top: 3rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem;">',
+            '<h3 id="citations" style="margin-bottom: 1rem; color: var(--text-secondary); font-size: 1.25rem;">参考资料 / 引用来源</h3>',
+            '<ol style="padding-left: 1.5rem; font-size: 0.9em; color: var(--text-secondary); line-height: 1.6;">'
+        ]
+
+        for item in items:
+            index = item.get("index", "")
+            title = self._escape_html(item.get("title", ""))
+            url = self._escape_html(item.get("url", ""))
+            source = self._escape_html(item.get("source", ""))
+            pub_date = self._escape_html(item.get("publishedAt", ""))
+
+            source_text = f" - <span style='color: var(--text-muted);'>{source}</span>" if source else ""
+            date_text = f" <span style='color: var(--text-muted);'>({pub_date})</span>" if pub_date else ""
+
+            lines.append(f'<li id="citation-{index}" style="margin-bottom: 0.5rem; word-break: break-all;">')
+            if url:
+                lines.append(f'<a href="{url}" target="_blank" rel="noopener noreferrer" style="color: var(--primary-color); text-decoration: none;">{title}</a>')
+            else:
+                lines.append(f'<span>{title}</span>')
+            lines.append(f'{source_text}{date_text}')
+            lines.append('</li>')
+
+        lines.append('</ol>')
+        lines.append('</div>')
+        return "\n".join(lines)
+
     def _collect_toc_entries(self, chapters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         根据metadata中的tocPlan或章节heading收集目录项。
@@ -1144,6 +1178,7 @@ class HTMLRenderer:
             "kpiGrid": self._render_kpi_grid,
             "widget": self._render_widget,
             "toc": lambda b: self._render_toc_section(),
+            "citationList": self._render_citation_list,
         }
         handler = handlers.get(block_type)
         if handler:

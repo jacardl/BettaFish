@@ -50,14 +50,18 @@ class KeywordOptimizer:
         self.api_key = api_key or settings.KEYWORD_OPTIMIZER_API_KEY
 
         if not self.api_key:
-            raise ValueError("未找到硅基流动API密钥，请在config.py中设置KEYWORD_OPTIMIZER_API_KEY")
+            raise ValueError("未找到API密钥，请在config.py中设置KEYWORD_OPTIMIZER_API_KEY")
 
         self.base_url = base_url or settings.KEYWORD_OPTIMIZER_BASE_URL
 
-        self.client = OpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url
-        )
+        client_kwargs = {
+            "api_key": self.api_key,
+            "base_url": self.base_url
+        }
+        if self.base_url and "omnisaas.cn" in self.base_url:
+            client_kwargs["default_headers"] = {"apikey": self.api_key}
+
+        self.client = OpenAI(**client_kwargs)
         self.model = model_name or settings.KEYWORD_OPTIMIZER_MODEL_NAME
     
     def optimize_keywords(self, original_query: str, context: str = "") -> KeywordOptimizationResponse:

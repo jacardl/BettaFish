@@ -637,6 +637,14 @@ def run_report_generation(task: ReportTask, query: str, custom_template: str = "
             task.state_file_relative_path = generation_result.get('state_relative_path', '')
             task.ir_file_path = generation_result.get('ir_filepath', '')
             task.ir_file_relative_path = generation_result.get('ir_relative_path', '')
+            
+        # 报告生成成功后，更新文件基准，防止前端无限循环触发自动生成
+        try:
+            if report_agent:
+                report_agent._initialize_file_baseline()
+        except Exception as e:
+            logger.error(f"更新文件基准失败: {e}")
+
         task.publish_event('html_ready', {
             'message': 'HTML渲染完成，可刷新预览',
             'report_file': task.report_file_relative_path or task.report_file_path,

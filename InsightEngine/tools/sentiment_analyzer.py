@@ -27,6 +27,14 @@ except ImportError:
     AutoModelForSequenceClassification = None  # type: ignore
     TRANSFORMERS_AVAILABLE = False
 
+from dotenv import load_dotenv
+load_dotenv()
+
+# 配置国内镜像源，解决下载 connection refused 错误
+if os.getenv("HF_ENDPOINT"):
+    os.environ["HF_ENDPOINT"] = os.getenv("HF_ENDPOINT")
+elif "HF_ENDPOINT" not in os.environ:
+    os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
 # INFO：若想跳过情感分析，可手动切换此开关为False
 SENTIMENT_ANALYSIS_ENABLED = True
