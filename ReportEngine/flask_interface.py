@@ -763,6 +763,78 @@ def get_history_tasks():
             'error': str(e)
         }), 500
 
+
+@report_bp.route('/history/<task_id>', methods=['DELETE'])
+def delete_history_task(task_id: str):
+    """
+    删除指定的历史任务及其相关的所有报告和状态文件。
+    
+    参数:
+        task_id: 要删除的任务ID，如果是恢复的任务，前缀通常为 'recovered_file_'
+    """
+    try:
+        if not report_agent:
+            return jsonify({'success': False, 'error': 'Report Engine未初始化'}), 500
+            
+        output_dir = Path(report_agent.config.OUTPUT_DIR)
+        ir_output_dir = Path(report_agent.config.DOCUMENT_IR_OUTPUT_DIR)
+        deleted_files = []
+        
+        # 1. 尝试从内存中获取该任务的信息
+        task = _get_task(task_id)
+        
+        # 获取文件名或安全前缀
+        html_file_name = ""
+        if task and task.report_file_name:
+            html_file_name = task.report_file_name
+        elif task_id.startswith('recovered_file_'):
+            html_file_name = task_id.replace('recovered_file_', '')
+        
+        if html_file_name:
+            # 找到 HTML 报告文件
+            html_path = output_dir / html_file_name
+            if html_path.exists():
+                html_path.unlink()
+                deleted_files.append(html_file_name)
+            
+            # 解析时间戳和查询词，尝试删除关联的 IR 和 State 文件
+            stem = Path(html_file_name).stem
+            parts = stem.replace('final_report_', '').split('_')
+            if len(parts) >= 2:
+                timestamp = f"{parts[-2]}_{parts[-1]}"
+                query_safe = '_'.join(parts[:-2])
+                
+                ir_filename = f"report_ir_{query_safe}_{timestamp}.json"
+                ir_path = ir_output_dir / ir_filename
+                if ir_path.exists():
+                    ir_path.unlink()
+                    deleted_files.append(ir_filename)
+                    
+                state_filename = f"report_state_{query_safe}_{timestamp}.json"
+                state_path = output_dir / state_filename
+                if state_path.exists():
+                    state_path.unlink()
+                    deleted_files.append(state_filename)
+        
+        # 从内存中移除
+        with task_lock:
+            if task_id in tasks_registry:
+                tasks_registry.pop(task_id)
+        
+        return jsonify({
+            'success': True,
+            'message': '任务及相关文件已删除',
+            'deleted_files': deleted_files
+        })
+        
+    except Exception as e:
+        logger.exception(f"删除历史任务失败: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @report_bp.route('/status', methods=['GET'])
 def get_status():
     """

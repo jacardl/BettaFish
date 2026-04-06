@@ -538,11 +538,7 @@ class HTMLRenderer:
         渲染吸顶头部，包含标题、副标题与功能按钮。
 
         按钮/控件说明（ID 用于 _hydration_script 里绑定事件）：
-        - <theme-button id="theme-toggle" value="light" size="1.5">：自定义 Web Component，
-          `value` 初始主题(light/dark)，`size` 控制整体缩放；触发 `change` 事件时传递 detail: 'light'/'dark'。
-        - <button id="print-btn">：点击后 window.print()，用于导出/打印。
-        - <button id="export-btn">：隐藏的 PDF 导出按钮，显示时绑定 exportPdf()。
-          仅当依赖就绪或业务层开放导出时展示。
+        - 移除了原有的“切换模式”和“打印页面”按钮。
 
         返回:
             str: header HTML。
@@ -558,34 +554,6 @@ class HTMLRenderer:
     {self._render_tagline()}
   </div>
   <div class="header-actions">
-    <!-- 旧版日夜模式切换按钮（Web Component 风格）：
-    <theme-button value="light" id="theme-toggle" size="1.5"></theme-button>
-    -->
-    <button id="theme-toggle-btn" class="action-btn theme-toggle-btn" type="button">
-      <svg class="btn-icon sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="5"></circle>
-        <line x1="12" y1="1" x2="12" y2="3"></line>
-        <line x1="12" y1="21" x2="12" y2="23"></line>
-        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-        <line x1="1" y1="12" x2="3" y2="12"></line>
-        <line x1="21" y1="12" x2="23" y2="12"></line>
-        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-      </svg>
-      <svg class="btn-icon moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
-        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-      </svg>
-      <span class="theme-label">切换模式</span>
-    </button>
-    <button id="print-btn" class="action-btn print-btn" type="button">
-      <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="6 9 6 2 18 2 18 9"></polyline>
-        <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
-        <rect x="6" y="14" width="12" height="8"></rect>
-      </svg>
-      <span>打印页面</span>
-    </button>
     <button id="export-btn" class="action-btn" type="button" style="display: none;">⬇️ 导出PDF</button>
   </div>
 </header>

@@ -253,7 +253,9 @@ class TemplateSelectionNode(BaseNode):
     
     def _extract_template_description(self, template_name: str) -> str:
         """根据模板名称生成描述，方便LLM理解模板定位。"""
-        if '企业品牌' in template_name:
+        if '游戏' in template_name:
+            return "适用于单款游戏产品的市场表现、玩家反馈与舆论态势深度剖析"
+        elif '企业品牌' in template_name:
             return "适用于企业品牌声誉和形象分析"
         elif '市场竞争' in template_name:
             return "适用于市场竞争格局和对手分析"
