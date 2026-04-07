@@ -683,6 +683,8 @@ class HTMLRenderer:
 
     def _render_citation_list(self, block: Dict[str, Any]) -> str:
         """渲染文末引用信息源列表"""
+        # 由于我们无法直接在 _render_citation_list 里获取到 task_id（或者 seed_id），
+        # 只能渲染一个通用前端 JS 函数的调用。在 HTML 文件全局加上 script 支持。
         items = block.get("items", [])
         if not items:
             return ""
@@ -705,7 +707,12 @@ class HTMLRenderer:
 
             lines.append(f'<li id="citation-{index}" style="margin-bottom: 0.5rem; word-break: break-all;">')
             if url:
-                lines.append(f'<a href="{url}" target="_blank" rel="noopener noreferrer" style="color: var(--primary-color); text-decoration: none;">{title}</a>')
+                if url.startswith("file:///"):
+                    # 拦截本地附件 URL，调用父级页面的 JS 查看原始合并后的 Seed 文本
+                    display_url = "javascript:if(window.parent && window.parent.viewSeedFile) { window.parent.viewSeedFile(); } else { alert('无法找到源文件。'); }"
+                    lines.append(f'<a href="{display_url}" style="color: var(--primary-color); text-decoration: underline; cursor: pointer;">{title}</a> <span style="font-size: 0.85em; color: var(--text-muted);">[已上传的本地参考附件]</span>')
+                else:
+                    lines.append(f'<a href="{url}" target="_blank" rel="noopener noreferrer" style="color: var(--primary-color); text-decoration: none;">{title}</a>')
             else:
                 lines.append(f'<span>{title}</span>')
             lines.append(f'{source_text}{date_text}')
@@ -3257,7 +3264,11 @@ class HTMLRenderer:
                 if href_raw and href_raw != "#":
                     href = self._escape_attr(href_raw)
                     title = self._escape_attr(mark.get("title") or "")
-                    prefix.append(f'<a href="{href}" title="{title}" target="_blank" rel="noopener">')
+                    # 如果是页内锚点（比如 #citation-1），就不加 target="_blank"
+                    if href.startswith("#"):
+                        prefix.append(f'<a href="{href}" title="{title}">')
+                    else:
+                        prefix.append(f'<a href="{href}" title="{title}" target="_blank" rel="noopener">')
                     suffix.insert(0, "</a>")
                 else:
                     prefix.append('<span class="broken-link">')

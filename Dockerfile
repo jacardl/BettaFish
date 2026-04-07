@@ -57,7 +57,8 @@ WORKDIR /app
 
 # Install Python dependencies first to leverage Docker layer caching
 COPY requirements.txt ./
-RUN uv pip install --system -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system -r requirements.txt
 
 # Install Playwright browser binaries (system deps already handled above)
 RUN python -m playwright install chromium

@@ -86,7 +86,7 @@ heading_block: Dict[str, Any] = {
     "type": "object",
     "properties": {
         "type": {"const": "heading"},
-        "level": {"type": "integer", "minimum": 1, "maximum": 6},
+        "level": {"type": "integer", "minimum": 1, "maximum": 2, "description": "绝对限制：最高只允许到 2 级标题，严禁使用 3 级或更深层级。"},
         "text": {"type": "string"},
         "anchor": {"type": "string"},
         "numbering": {"type": "string"},

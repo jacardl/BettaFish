@@ -426,11 +426,13 @@ class DeepSearchAgent:
     def _save_report(self, report_content: str):
         """保存报告到文件"""
         # 生成文件名
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         query_safe = "".join(c for c in self.state.query if c.isalnum() or c in (' ', '-', '_')).rstrip()
         query_safe = query_safe.replace(' ', '_')[:30]
         
-        filename = f"deep_search_report_{query_safe}_{timestamp}.md"
+        # 使用统一的 task_id 如果存在，否则使用时间戳
+        task_id = self.state.task_id if getattr(self.state, 'task_id', '') else datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        filename = f"deep_search_report_{query_safe}_{task_id}.md"
         filepath = os.path.join(self.config.OUTPUT_DIR, filename)
         
         # 保存报告
@@ -441,7 +443,7 @@ class DeepSearchAgent:
         
         # 保存状态（如果配置允许）
         if self.config.SAVE_INTERMEDIATE_STATES:
-            state_filename = f"state_{query_safe}_{timestamp}.json"
+            state_filename = f"state_{query_safe}_{task_id}.json"
             state_filepath = os.path.join(self.config.OUTPUT_DIR, state_filename)
             self.state.save_to_file(state_filepath)
             logger.info(f"状态已保存到: {state_filepath}")

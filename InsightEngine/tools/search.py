@@ -74,6 +74,10 @@ class MediaCrawlerDB:
         """
         self.api_key = os.getenv("ANSPIRE_API_KEY")
         if not self.api_key:
+            # 兼容旧配置项
+            self.api_key = settings.ANSPIRE_API_KEY
+            
+        if not self.api_key:
             logger.warning("未配置 ANSPIRE_API_KEY，实时搜索功能可能受限")
         
         self._headers = {

@@ -432,7 +432,7 @@ class ReportAgent:
             Exception: 任一子节点或渲染阶段失败时抛出，外层调用方负责兜底。
         """
         start_time = datetime.now()
-        report_id = f"report-{uuid4().hex[:8]}"
+        report_id = self.state.task_id if self.state.task_id else f"report-{uuid4().hex[:8]}"
         self.state.task_id = report_id
         self.state.query = query
         self.state.metadata.query = query
@@ -452,7 +452,10 @@ class ReportAgent:
                 return
             try:
                 stream_handler(event_type, payload)
-            except Exception as callback_error:  # pragma: no cover - 仅记录
+            except Exception as callback_error:
+                # 允许 CancelGenerationException 透传以中断生成
+                if type(callback_error).__name__ == "CancelGenerationException":
+                    raise callback_error
                 logger.warning(f"流式事件回调失败: {callback_error}")
 
         logger.info(f"开始生成报告 {report_id}: {query}")
@@ -573,6 +576,12 @@ class ReportAgent:
             )
             total_chapters = len(sections)  # 总章节数
             completed_chapters = 0  # 已完成章节数
+            
+            # =======================
+            # 新增: AI Memory 滚动记忆链
+            # =======================
+            chapter_memories = []
+            generation_context["chapter_memories"] = chapter_memories
 
             for section in sections:
                 logger.info(f"生成章节: {section.title}")
@@ -731,6 +740,20 @@ class ReportAgent:
                     raise ChapterJsonParseError(
                         f"{section.title} 章节JSON在 {chapter_max_attempts} 次尝试后仍无法解析"
                     )
+                
+                # =======================
+                # 新增: 提取本章核心内容加入 Memory
+                # =======================
+                try:
+                    chapter_summary = self._extract_chapter_memory(chapter_payload)
+                    if chapter_summary:
+                        chapter_memories.append({
+                            "title": section.title,
+                            "summary": chapter_summary
+                        })
+                except Exception as e:
+                    logger.warning(f"提取章节 {section.title}记忆失败，跳过: {e}")
+
                 chapters.append(chapter_payload)
                 completed_chapters += 1  # 更新已完成章节数
                 # 计算当前进度：20% + 80% * (已完成章节数 / 总章节数)，四舍五入
@@ -739,6 +762,24 @@ class ReportAgent:
                     'progress': chapter_progress,
                     'message': f'章节 {completed_chapters}/{total_chapters} 已完成'
                 })
+                
+                # 增量渲染 HTML 实现“生成一章看一章”
+                try:
+                    import copy
+                    temp_chapters = copy.deepcopy(chapters)
+                    temp_ir = self.document_composer.build_document(
+                        report_id,
+                        manifest_meta,
+                        temp_chapters
+                    )
+                    # 每章都顺便做下事实核查（无数据章警告）并渲染出临时 HTML
+                    temp_ir = self.fact_checker_node.run(temp_ir, normalized_reports)
+                    temp_html = self.renderer.render(temp_ir)
+                    self.state.html_content = temp_html
+                    emit('stage', {'stage': 'chapter_html_ready', 'chapter_id': section.chapter_id, 'task_id': report_id})
+                except Exception as render_err:
+                    logger.warning(f"增量渲染章节 HTML 失败: {render_err}")
+                
                 completion_status = {
                     'chapterId': section.chapter_id,
                     'title': section.title,
@@ -817,10 +858,18 @@ class ReportAgent:
                 'selection_reason': '用户指定的自定义模板'
             }
         
+        # 截断过长的报告和论坛日志，避免超长截断警告
+        truncated_reports = []
+        for report in reports:
+            content = str(report)
+            truncated_reports.append(content[:15000] if len(content) > 15000 else content)
+            
+        truncated_forum_logs = str(forum_logs)[:15000] if forum_logs else ""
+
         template_input = {
             'query': query,
-            'reports': reports,
-            'forum_logs': forum_logs
+            'reports': truncated_reports,
+            'forum_logs': truncated_forum_logs
         }
         
         try:
@@ -844,6 +893,38 @@ class ReportAgent:
             self.state.metadata.template_used = fallback_template['template_name']
             return fallback_template
     
+    def _extract_chapter_memory(self, chapter_payload: Dict[str, Any]) -> str:
+        """
+        从生成的章节JSON中提取核心内容作为记忆，用于指导下一章生成，避免内容重复。
+        提取标题、核心结论和一些关键数据点。
+        """
+        memory_parts = []
+        blocks = chapter_payload.get("blocks", [])
+        
+        for block in blocks:
+            b_type = block.get("type")
+            if b_type == "paragraph":
+                text = block.get("content", {}).get("text", "")
+                if len(text) > 100:
+                    memory_parts.append(text[:100] + "...") # 取段落前100字
+                else:
+                    memory_parts.append(text)
+            elif b_type == "kpiGrid":
+                items = block.get("content", {}).get("items", [])
+                for item in items:
+                    memory_parts.append(f"KPI: {item.get('label')}={item.get('value')}")
+            elif b_type == "callout":
+                memory_parts.append(f"重点提示: {block.get('content', {}).get('text', '')}")
+                
+            # 限制单个章节记忆的最大长度
+            if len("\n".join(memory_parts)) > 800:
+                break
+                
+        summary = "\n".join(memory_parts)
+        if len(summary) > 800:
+            return summary[:800] + "...(截断)"
+        return summary
+
     def _slice_template(self, template_markdown: str) -> List[TemplateSection]:
         """
         将模板切成章节列表，若为空则提供fallback。
@@ -1334,23 +1415,33 @@ class ReportAgent:
         返回:
             dict: 记录HTML/IR/State文件的绝对与相对路径信息。
         """
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         query_safe = "".join(
             c for c in self.state.metadata.query if c.isalnum() or c in (" ", "-", "_")
         ).rstrip()
         query_safe = query_safe.replace(" ", "_")[:30] or "report"
 
-        html_filename = f"final_report_{query_safe}_{timestamp}.html"
+        # 在保存新文件之前，删除该 task_id 对应的所有旧报告文件（防止 query 变更导致残留）
+        try:
+            for old_file in Path(self.config.OUTPUT_DIR).glob(f"*{report_id}*"):
+                if old_file.is_file():
+                    old_file.unlink()
+            for old_ir in Path(self.config.DOCUMENT_IR_OUTPUT_DIR).glob(f"*{report_id}*"):
+                if old_ir.is_file():
+                    old_ir.unlink()
+        except Exception as e:
+            logger.warning(f"清理旧报告文件失败: {e}")
+
+        html_filename = f"final_report_{query_safe}_{report_id}.html"
         html_path = Path(self.config.OUTPUT_DIR) / html_filename
         html_path.write_text(html_content, encoding="utf-8")
         html_abs = str(html_path.resolve())
         html_rel = os.path.relpath(html_abs, os.getcwd())
 
-        ir_path = self._save_document_ir(document_ir, query_safe, timestamp)
+        ir_path = self._save_document_ir(document_ir, query_safe, report_id)
         ir_abs = str(ir_path.resolve())
         ir_rel = os.path.relpath(ir_abs, os.getcwd())
 
-        state_filename = f"report_state_{query_safe}_{timestamp}.json"
+        state_filename = f"report_state_{query_safe}_{report_id}.json"
         state_path = Path(self.config.OUTPUT_DIR) / state_filename
         self.state.save_to_file(str(state_path))
         state_abs = str(state_path.resolve())
@@ -1443,27 +1534,68 @@ class ReportAgent:
         self.state.save_to_file(filepath)
         logger.info(f"状态已保存到 {filepath}")
     
-    def check_input_files(self, insight_dir: str, media_dir: str, query_dir: str, forum_log_path: str) -> Dict[str, Any]:
+    def check_input_files(self, insight_dir: str, media_dir: str, query_dir: str, forum_log_path: str, task_id: str = None) -> Dict[str, Any]:
         """
-        检查输入文件是否准备就绪（基于文件数量增加）。
+        检查输入文件是否准备就绪。
+        
+        如果提供了 task_id，则检查各个目录下是否存在包含该 task_id 的文件（用于历史报告重新生成）。
+        如果没有提供 task_id，则基于文件基准管理器检查是否有新文件。
         
         Args:
             insight_dir: InsightEngine报告目录
             media_dir: MediaEngine报告目录
             query_dir: QueryEngine报告目录
             forum_log_path: 论坛日志文件路径
+            task_id: 统一的任务ID（可选）
             
         Returns:
             检查结果字典，包含文件计数、缺失列表、最新文件路径等
         """
-        # 检查各个报告目录的文件数量变化
         directories = {
             'insight': insight_dir,
             'media': media_dir,
             'query': query_dir
         }
         
-        # 使用文件基准管理器检查新文件
+        # 检查论坛日志
+        forum_ready = os.path.exists(forum_log_path)
+        
+        if task_id:
+            # 历史任务检查模式：查找包含 task_id 的文件
+            missing_files = []
+            files_found = []
+            latest_files = {}
+            ready = True
+            
+            for engine, directory in directories.items():
+                dir_path = Path(directory)
+                if not dir_path.exists():
+                    ready = False
+                    missing_files.append(engine)
+                    continue
+                    
+                # 查找包含 task_id 的文件
+                matching_files = list(dir_path.glob(f"*{task_id}*"))
+                if matching_files:
+                    # 取最新修改的一个
+                    latest_file = max(matching_files, key=os.path.getmtime)
+                    files_found.append(latest_file.name)
+                    latest_files[engine] = str(latest_file.resolve())
+                else:
+                    ready = False
+                    missing_files.append(f"{engine} 引擎目录中未找到任务 {task_id} 的报告")
+            
+            return {
+                'ready': ready and forum_ready,
+                'baseline_counts': {},
+                'current_counts': {},
+                'new_files_found': {},
+                'missing_files': missing_files,
+                'files_found': files_found,
+                'latest_files': latest_files
+            }
+            
+        # 默认模式：使用文件基准管理器检查新文件
         check_result = self.file_baseline.check_new_files(directories)
         
         # 检查论坛日志

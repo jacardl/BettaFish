@@ -23,6 +23,10 @@ from .nodes import ChapterJsonParseError
 from .utils.config import settings
 
 
+from werkzeug.utils import secure_filename
+import docx
+import fitz  # PyMuPDF
+
 # 创建Blueprint
 report_bp = Blueprint('report_engine', __name__)
 
@@ -360,6 +364,10 @@ def initialize_report_engine():
         return False
 
 
+class CancelGenerationException(Exception):
+    """用户主动取消生成的异常"""
+    pass
+
 class ReportTask:
     """
     报告生成任务。
@@ -380,10 +388,12 @@ class ReportTask:
         self.task_id = task_id
         self.query = query
         self.custom_template = custom_template
+        self.seed_context = ""
         self.status = "pending"  # 四种状态（pending/running/completed/error）
         self.progress = 0
         self.result = None
         self.error_message = ""
+        self.is_cancelled = False
         self.created_at = datetime.now()
         self.updated_at = datetime.now()
         self.html_content = ""
@@ -495,12 +505,13 @@ class ReportTask:
             return [evt for evt in self.event_history if evt['id'] > last_event_id]
 
 
-def check_engines_ready() -> Dict[str, Any]:
+def check_engines_ready(task_id: str = None) -> Dict[str, Any]:
     """
     检查三个子引擎是否都有新文件。
 
     调用 ReportAgent 的基准检测逻辑，并附带论坛日志存在性，
     是 /status、/generate 的前置校验。
+    如果提供了 task_id，则检查该特定任务的文件是否存在。
     """
     directories = {
         'insight': 'insight_engine_streamlit_reports',
@@ -520,7 +531,8 @@ def check_engines_ready() -> Dict[str, Any]:
         directories['insight'],
         directories['media'],
         directories['query'],
-        forum_log_path
+        forum_log_path,
+        task_id=task_id
     )
 
 
@@ -541,6 +553,14 @@ def run_report_generation(task: ReportTask, query: str, custom_template: str = "
     try:
         # 在局部闭包内封装推送逻辑，便于传递给ReportAgent
         def stream_handler(event_type: str, payload: Dict[str, Any]):
+            if task.is_cancelled:
+                raise CancelGenerationException("用户已取消生成")
+            
+            # 同步获取最新的增量HTML内容到任务对象中，使得 /result 接口能读取
+            if event_type == 'stage' and payload.get('stage') == 'chapter_html_ready':
+                if hasattr(report_agent, 'state') and hasattr(report_agent.state, 'html_content'):
+                    task.html_content = report_agent.state.html_content
+
             """所有阶段事件都通过同一个接口分发，保证日志一致。"""
             task.publish_event(event_type, payload)
             # 如果事件包含进度信息，同步更新任务进度
@@ -551,7 +571,7 @@ def run_report_generation(task: ReportTask, query: str, custom_template: str = "
         task.publish_event('stage', {'message': '任务已启动，正在检查输入文件', 'stage': 'prepare'})
 
         # 检查输入文件
-        check_result = check_engines_ready()
+        check_result = check_engines_ready(task_id=task.task_id)
         if not check_result['ready']:
             task.update_status("error", 0, f"输入文件未准备就绪: {check_result.get('missing_files', [])}")
             return
@@ -565,6 +585,18 @@ def run_report_generation(task: ReportTask, query: str, custom_template: str = "
         # 加载输入文件
         content = report_agent.load_input_files(check_result['latest_files'])
         task.publish_event('stage', {'message': '源数据加载完成，启动生成流程', 'stage': 'data_loaded'})
+
+        # 将 seed_context 注入到 forum_logs 中（如果存在），作为最高优先级的补充信息
+        if task.seed_context:
+            logger.info(f"注入种子文件上下文到报告引擎, 长度: {len(task.seed_context)}")
+            seed_supplement = (
+                "\n\n=======================================================\n"
+                "【系统级补充：用户上传的绝对真实种子材料（最高优先级事实基准）】\n"
+                "提示：这部分内容是用户手动上传的确切资料，你可以将其作为参考资料引用，URL格式可标注为 '[本地附件文件]' 或源文件名。\n"
+                "=======================================================\n"
+                f"{task.seed_context}\n\n"
+            )
+            content['forum_logs'] = seed_supplement + content.get('forum_logs', '')
 
         # 生成报告（附带兜底重试，缓解瞬时网络抖动）
         for attempt in range(1, 3):
@@ -593,15 +625,10 @@ def run_report_generation(task: ReportTask, query: str, custom_template: str = "
                     'error': str(err),
                     'task': task.to_dict(),
                 })
-                # 旧逻辑：在JSON解析失败后重启Report Engine
-                # backoff = min(5 * attempt, 15)
-                # task.publish_event('stage', {
-                #     'message': f'{backoff} 秒后重试生成任务',
-                #     'stage': 'retry_wait',
-                #     'wait_seconds': backoff
-                # })
-                # time.sleep(backoff)
                 raise ChapterJsonParseError(hint_message) from err
+            except CancelGenerationException:
+                # 如果是用户取消，则不进行重试，直接抛出到外层处理
+                raise
             except Exception as err:
                 # 将错误即时推送至前端，方便观察重试策略
                 task.publish_event('warning', {
@@ -659,6 +686,10 @@ def run_report_generation(task: ReportTask, query: str, custom_template: str = "
             'task': task.to_dict(),
         })
 
+    except CancelGenerationException:
+        task.update_status("cancelled", 0, "用户主动取消了生成")
+        task.publish_event('stage', {'message': '生成已取消', 'stage': 'cancelled'})
+        logger.info(f"任务 {task.task_id} 已被用户取消")
     except Exception as e:
         logger.exception(f"报告生成过程中发生错误: {str(e)}")
         task.update_status("error", 0, str(e))
@@ -672,6 +703,146 @@ def run_report_generation(task: ReportTask, query: str, custom_template: str = "
             if current_task and current_task.task_id == task.task_id:
                 current_task = None
 
+
+import tempfile
+from InsightEngine.tools.keyword_optimizer import KeywordOptimizer
+
+@report_bp.route('/seed/<seed_id>', methods=['GET'])
+def get_seed_content(seed_id: str):
+    """
+    提供在线预览用户上传的 Seed 内容的接口。
+    前端可以通过弹窗或新标签页调用该接口查看纯文本数据。
+    """
+    try:
+        # 安全校验，防止目录穿越
+        if ".." in seed_id or "/" in seed_id or "\\" in seed_id:
+            return jsonify({'success': False, 'error': '无效的 seed_id'}), 400
+
+        seed_path = Path(settings.OUTPUT_DIR) / 'seeds' / f"{seed_id}.txt"
+        if not seed_path.exists():
+            return jsonify({'success': False, 'error': 'Seed 文件不存在或已过期'}), 404
+
+        content = seed_path.read_text(encoding='utf-8')
+        # 返回纯文本，浏览器可以直接原生渲染显示
+        return Response(content, mimetype='text/plain')
+    except Exception as e:
+        logger.error(f"读取 Seed 内容失败: {e}")
+        return jsonify({'success': False, 'error': '读取内容时发生错误'}), 500
+
+@report_bp.route('/analyze_seed', methods=['POST'])
+def analyze_seed():
+    """
+    处理上传的种子附件，提取文本并结合原查询生成优化关键词。
+    支持 .txt, .md, .pdf, .doc, .docx
+    """
+    try:
+        query = request.form.get('query', '').strip()
+        if not query:
+            return jsonify({'success': False, 'error': '未提供原始查询'}), 400
+
+        files = request.files.getlist('files')
+        if not files:
+            return jsonify({'success': False, 'error': '未提供附件'}), 400
+
+        combined_text = []
+        for file in files:
+            filename = file.filename.lower()
+            ext = os.path.splitext(filename)[1]
+            
+            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as temp:
+                file.save(temp.name)
+                temp_path = temp.name
+
+            try:
+                extracted = ""
+                if ext in ['.txt', '.md']:
+                    with open(temp_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        extracted = f.read()
+                elif ext == '.pdf':
+                    doc = fitz.open(temp_path)
+                    for page in doc:
+                        extracted += page.get_text() + "\n"
+                    doc.close()
+                elif ext in ['.doc', '.docx']:
+                    doc = docx.Document(temp_path)
+                    extracted = "\n".join([para.text for para in doc.paragraphs])
+                else:
+                    logger.warning(f"不支持的文件格式: {ext}")
+                    
+                if extracted.strip():
+                    # 特意为附件拼装一个假的 URL 格式供 LLM 引用
+                    fake_url = f"file:///{file.filename}"
+                    combined_text.append(f"--- 附件标题: {file.filename} ---\nURL: {fake_url}\n{extracted.strip()}")
+            except Exception as e:
+                logger.error(f"解析附件 {file.filename} 失败: {e}")
+            finally:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+
+        seed_context = "\n\n".join(combined_text)
+        if not seed_context:
+            return jsonify({'success': False, 'error': '无法从附件中提取任何文本'}), 400
+
+        # 截断过长文本，避免大模型Token爆炸（这里取前15000字符作为上下文参考）
+        context_for_optimizer = seed_context[:15000]
+
+        # 调用关键词优化器
+        optimizer = KeywordOptimizer()
+        prompt_context = (
+            "【以下是用户提供的真实种子附件内容，请重点提取其中的实体名词、事件和核心痛点，"
+            "确保生成的关键词不脱离这些事实锚点】\n\n" + context_for_optimizer
+        )
+        
+        response = optimizer.optimize_keywords(query, prompt_context)
+        
+        if not response.success:
+            return jsonify({'success': False, 'error': response.error_message}), 500
+
+        # 将完整的 seed_context 保存到临时目录，供后续生成报告时调用
+        seed_id = f"seed_{int(time.time()*1000)}"
+        seed_dir = Path(settings.OUTPUT_DIR) / 'seeds'
+        seed_dir.mkdir(parents=True, exist_ok=True)
+        seed_path = seed_dir / f"{seed_id}.txt"
+        seed_path.write_text(seed_context, encoding='utf-8')
+
+        return jsonify({
+            'success': True,
+            'optimized_keywords': response.optimized_keywords,
+            'reasoning': response.reasoning,
+            'seed_id': seed_id
+        })
+
+    except Exception as e:
+        logger.exception(f"分析种子文件失败: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@report_bp.route('/cancel/<task_id>', methods=['POST'])
+def cancel_report(task_id: str):
+    """
+    取消正在生成的报告任务。
+    """
+    global current_task
+    try:
+        task = _get_task(task_id)
+        if not task:
+            return jsonify({'success': False, 'error': '任务不存在'}), 404
+
+        if task.status == 'completed':
+            return jsonify({'success': False, 'error': '报告已经生成完成，无法取消'}), 400
+
+        # 设置取消标志位，后台线程会在下一个 stream 事件点抛出异常中断
+        task.is_cancelled = True
+        task.update_status("cancelled", 0, "用户主动取消了生成")
+        task.publish_event('stage', {'message': '生成已取消', 'stage': 'cancelled'})
+        
+        with task_lock:
+            if current_task and current_task.task_id == task_id:
+                current_task = None
+                
+        return jsonify({'success': True, 'message': '已发送取消指令'})
+    except Exception as e:
+        logger.error(f"取消任务失败: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @report_bp.route('/history', methods=['GET'])
 def get_history_tasks():
@@ -729,6 +900,25 @@ def get_history_tasks():
                             task_data['state_file_ready'] = True
                             task_data['state_file_path'] = str(state_path.resolve())
                             
+                        # 检查子引擎的报告文件
+                        task_data['related_reports'] = []
+                        engine_dirs = {
+                            'insight': 'insight_engine_streamlit_reports',
+                            'media': 'media_engine_streamlit_reports',
+                            'query': 'query_engine_streamlit_reports'
+                        }
+                        
+                        for engine_name, engine_dir in engine_dirs.items():
+                            engine_report_name = f"deep_search_report_{query_safe}_{timestamp}.md"
+                            # 子引擎的报告生成在项目根目录下的各个 engine_dir 中，而不是在 final_reports 下
+                            engine_report_path = Path(engine_dir) / engine_report_name
+                            if engine_report_path.exists():
+                                task_data['related_reports'].append({
+                                    'engine': engine_name,
+                                    'filename': engine_report_name,
+                                    'path': str(engine_report_path.resolve())
+                                })
+                                
                         tasks.append(task_data)
                 except Exception as e:
                     logger.warning(f"解析历史任务文件失败 {html_path.name}: {e}")
@@ -815,6 +1005,26 @@ def delete_history_task(task_id: str):
                 if state_path.exists():
                     state_path.unlink()
                     deleted_files.append(state_filename)
+                
+                # 删除子引擎生成的关联报告
+                engine_dirs = {
+                    'insight': 'insight_engine_streamlit_reports',
+                    'media': 'media_engine_streamlit_reports',
+                    'query': 'query_engine_streamlit_reports'
+                }
+                for engine_name, engine_dir in engine_dirs.items():
+                    engine_report_name = f"deep_search_report_{query_safe}_{timestamp}.md"
+                    engine_report_path = Path(engine_dir) / engine_report_name
+                    if engine_report_path.exists():
+                        engine_report_path.unlink()
+                        deleted_files.append(f"{engine_dir}/{engine_report_name}")
+                    
+                    # 同时删除可能的状态文件
+                    engine_state_name = f"state_{query_safe}_{timestamp}.json"
+                    engine_state_path = Path(engine_dir) / engine_state_name
+                    if engine_state_path.exists():
+                        engine_state_path.unlink()
+                        deleted_files.append(f"{engine_dir}/{engine_state_name}")
         
         # 从内存中移除
         with task_lock:
@@ -844,7 +1054,8 @@ def get_status():
         Response: JSON结构包含initialized/engines_ready/当前任务等。
     """
     try:
-        engines_status = check_engines_ready()
+        task_id = request.args.get('task_id')
+        engines_status = check_engines_ready(task_id=task_id)
 
         # 如果当前没有在内存中的任务，尝试从本地查找最新生成的报告作为兜底
         task_data = current_task.to_dict() if current_task else None
@@ -949,6 +1160,8 @@ def generate_report():
             data = {}
         query = data.get('query', '智能舆情分析报告')
         custom_template = data.get('custom_template', '')
+        seed_id = data.get('seed_id', '')
+        task_id = data.get('task_id', f"report_{int(time.time())}")
 
         # 清空日志文件
         clear_report_log()
@@ -961,7 +1174,7 @@ def generate_report():
             }), 500
 
         # 检查输入文件是否准备就绪
-        engines_status = check_engines_ready()
+        engines_status = check_engines_ready(task_id=task_id)
         if not engines_status['ready']:
             return jsonify({
                 'success': False,
@@ -970,13 +1183,26 @@ def generate_report():
             }), 400
 
         # 创建新任务
-        task_id = f"report_{int(time.time())}"
         task = ReportTask(query, task_id, custom_template)
+
+        # 尝试读取种子文件上下文
+        if seed_id:
+            seed_path = Path(settings.OUTPUT_DIR) / 'seeds' / f"{seed_id}.txt"
+            if seed_path.exists():
+                try:
+                    task.seed_context = seed_path.read_text(encoding='utf-8')
+                    logger.info(f"任务 {task_id} 已成功加载种子上下文 {seed_id}，大小: {len(task.seed_context)} 字符")
+                except Exception as e:
+                    logger.error(f"读取种子上下文 {seed_id} 失败: {e}")
 
         with task_lock:
             current_task = task
             tasks_registry[task_id] = task
             _prune_task_history_locked()
+
+        # 把 task_id 透传给 report_agent 的 state
+        if report_agent:
+            report_agent.state.task_id = task_id
 
         # 通过主动推送pending事件告知前端任务已经排队
         task.publish_event(
@@ -1180,7 +1406,7 @@ def stream_task(task_id: str):
 @report_bp.route('/result/<task_id>', methods=['GET'])
 def get_result(task_id: str):
     """
-    获取报告生成结果。
+    获取报告生成结果（或增量预览）。
 
     参数:
         task_id: 任务ID。
@@ -1196,10 +1422,27 @@ def get_result(task_id: str):
                 'error': '任务不存在'
             }), 404
 
+        # 优先返回内存中的已渲染 HTML，即使任务未完成（实现“生成一章看一章”）
+        if getattr(task, 'html_content', None):
+            return Response(task.html_content, mimetype='text/html')
+
         if task.status != "completed":
+            # 如果任务被取消或出错，尝试从硬盘中搜索匹配的历史文件兜底
+            if report_agent:
+                output_dir = Path(report_agent.config.OUTPUT_DIR)
+                base_id = task_id.replace('recovered_file_', '').replace('final_report_', '').replace('.html', '')
+                html_files = list(output_dir.glob(f"*{base_id}*.html"))
+                if html_files:
+                    latest_html = max(html_files, key=lambda p: p.stat().st_mtime)
+                    try:
+                        with open(latest_html, 'r', encoding='utf-8') as f:
+                            return Response(f.read(), mimetype='text/html')
+                    except Exception as e:
+                        pass
+                        
             return jsonify({
                 'success': False,
-                'error': '报告尚未完成',
+                'error': '报告尚未生成任何内容',
                 'task': task.to_dict()
             }), 400
 
@@ -1228,6 +1471,23 @@ def get_result_json(task_id: str):
             }), 404
 
         if task.status != "completed":
+            # 兜底查询硬盘
+            if report_agent:
+                output_dir = Path(report_agent.config.OUTPUT_DIR)
+                base_id = task_id.replace('recovered_file_', '').replace('final_report_', '').replace('.html', '')
+                html_files = list(output_dir.glob(f"*{base_id}*.html"))
+                if html_files:
+                    latest_html = max(html_files, key=lambda p: p.stat().st_mtime)
+                    try:
+                        with open(latest_html, 'r', encoding='utf-8') as f:
+                            return jsonify({
+                                'success': True,
+                                'task': task.to_dict(),
+                                'html_content': f.read()
+                            })
+                    except Exception as e:
+                        pass
+                        
             return jsonify({
                 'success': False,
                 'error': '报告尚未完成',
@@ -1251,20 +1511,46 @@ def get_result_json(task_id: str):
 @report_bp.route('/download/<task_id>', methods=['GET'])
 def download_report(task_id: str):
     """
-    下载已生成的报告HTML文件。
-
-    参数:
-        task_id: 任务ID。
-
-    返回:
-        Response: HTML文件的附件下载响应。
+    下载已生成的报告HTML文件或中间产物。
+    如果是历史任务，从本地文件系统中匹配。
     """
     try:
         task = _get_task(task_id)
+        
+        # 如果内存中没有这个任务，尝试从硬盘中搜索匹配的历史文件
         if not task:
+            # 去 final_reports 和 document_ir 目录里找
+            # task_id 在此处可能是纯 ID 也可能是完整文件名
+            base_id = task_id.replace('report_state_', '').replace('final_report_', '').replace('.json', '').replace('.html', '')
+            
+            # 支持下载 JSON (IR数据/状态数据)
+            if task_id.endswith('.json'):
+                json_path = os.path.join(REPORT_DIR, task_id)
+                if not os.path.exists(json_path):
+                    json_path = os.path.join(REPORT_DIR, 'document_ir', task_id)
+                
+                if os.path.exists(json_path):
+                    return send_file(
+                        json_path,
+                        mimetype='application/json',
+                        as_attachment=True,
+                        download_name=task_id
+                    )
+                return jsonify({'success': False, 'error': '未找到对应的JSON历史文件'}), 404
+            
+            # 否则默认搜索 HTML 最终报告
+            html_files = list(Path(REPORT_DIR).glob(f"*{base_id}*.html"))
+            if html_files:
+                return send_file(
+                    str(html_files[0]),
+                    mimetype='text/html',
+                    as_attachment=True,
+                    download_name=html_files[0].name
+                )
+                
             return jsonify({
                 'success': False,
-                'error': '任务不存在'
+                'error': '任务不存在且未找到对应的历史报告文件'
             }), 404
 
         if task.status != "completed" or not task.report_file_path:
@@ -1288,60 +1574,13 @@ def download_report(task_id: str):
         )
 
     except Exception as e:
-        logger.exception(f"下载报告失败: {str(e)}")
+        logger.error(f"下载报告失败: {str(e)}")
         return jsonify({
             'success': False,
             'error': str(e)
         }), 500
 
 
-@report_bp.route('/cancel/<task_id>', methods=['POST'])
-def cancel_task(task_id: str):
-    """
-    取消报告生成任务。
-
-    参数:
-        task_id: 需要被取消的任务ID。
-
-    返回:
-        Response: JSON，包含取消结果或错误信息。
-    """
-    global current_task
-
-    try:
-        with task_lock:
-            if current_task and current_task.task_id == task_id:
-                if current_task.status == "running":
-                    current_task.update_status("cancelled", 0, "用户取消任务")
-                    current_task.publish_event('cancelled', {
-                        'message': '任务被用户主动终止',
-                        'task': current_task.to_dict(),
-                    })
-                current_task = None
-            task = tasks_registry.get(task_id)
-            if task and task.status == 'running':
-                task.update_status("cancelled", task.progress, "用户取消任务")
-                task.publish_event('cancelled', {
-                    'message': '任务被用户主动终止',
-                    'task': task.to_dict(),
-                })
-
-                return jsonify({
-                    'success': True,
-                    'message': '任务已取消'
-                })
-            else:
-                return jsonify({
-                    'success': False,
-                    'error': '任务不存在或无法取消'
-                }), 404
-
-    except Exception as e:
-        logger.exception(f"取消报告生成任务失败: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
 
 
 @report_bp.route('/templates', methods=['GET'])

@@ -104,6 +104,7 @@ class LLMClient:
     def stream_invoke(self, system_prompt: str, user_prompt: str, **kwargs) -> Generator[str, None, None]:
         """
         流式调用LLM，逐步返回响应内容。
+        带有防御性的自动截断逻辑，以防大模型抛出 "request was too large" 且导致无限重试。
         
         参数:
             system_prompt: 系统提示词。
@@ -113,11 +114,6 @@ class LLMClient:
         产出:
             str: 每次yield一段delta文本，方便上层实时渲染。
         """
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
-
         allowed_keys = {"temperature", "top_p", "presence_penalty", "frequency_penalty", "max_tokens"}
         extra_params = {key: value for key, value in kwargs.items() if key in allowed_keys and value is not None}
         if "max_tokens" not in extra_params:
@@ -125,24 +121,62 @@ class LLMClient:
         # 强制使用流式
         extra_params["stream"] = True
 
-        timeout = kwargs.pop("timeout", self.timeout)
+        # =======================
+        # 新增防御机制：动态截断以防御 "request was too large"
+        # =======================
+        MAX_CHARS = 100000  # 初始边界：约3万Token
+        if len(user_prompt) > MAX_CHARS:
+            logger.warning(f"用户提示词过长 ({len(user_prompt)} 字符)，触发初始截断以防止 'request was too large'。")
+            half = MAX_CHARS // 2
+            user_prompt = user_prompt[:half] + "\n\n...[由于长度限制，中间部分已被系统自动截断]...\n\n" + user_prompt[-half:]
 
-        try:
-            stream = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=messages,
-                timeout=timeout,
-                **extra_params,
-            )
-            
-            for chunk in stream:
-                if chunk.choices and len(chunk.choices) > 0:
-                    delta = chunk.choices[0].delta
-                    if delta and delta.content:
-                        yield delta.content
-        except Exception as e:
-            logger.error(f"流式请求失败: {str(e)}")
-            raise e
+        while True:
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ]
+
+            timeout = kwargs.get("timeout", self.timeout)
+
+            try:
+                stream = self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=messages,
+                    timeout=timeout,
+                    **extra_params,
+                )
+                
+                for chunk in stream:
+                    if chunk.choices and len(chunk.choices) > 0:
+                        delta = chunk.choices[0].delta
+                        if delta and delta.content:
+                            yield delta.content
+                break  # 成功后退出循环
+                
+            except Exception as e:
+                error_msg = str(e)
+                
+                # 处理超大请求报错（动态递减截断）
+                if "request was too large" in error_msg.lower() or "context length exceeded" in error_msg.lower():
+                    # 计算新的更小的长度限制
+                    current_len = len(user_prompt)
+                    new_len = int(current_len * 0.7)  # 每次缩减 30%
+                    
+                    if new_len < 1000:
+                        # 缩减到极限仍失败，说明是其他问题，抛出异常
+                        logger.error(f"用户提示词已缩减至极限 ({current_len} 字符)，仍然提示请求过大。停止重试。")
+                        raise e
+                        
+                    logger.warning(f"大模型返回 'request was too large'。当前字符数: {current_len}。系统正在自动缩减 30% 至 {new_len} 字符并立即重试...")
+                    half = new_len // 2
+                    user_prompt = user_prompt[:half] + "\n\n...[因模型上下文溢出，中间部分被系统自动截断]...\n\n" + user_prompt[-half:]
+                    continue  # 继续循环进行下一次尝试
+
+                logger.error(f"流式请求失败: {error_msg}")
+                # 如果是 502/504 等网关错误导致的 HTML 响应，包装成更明确的异常，以便上层重试机制能够捕获
+                if "<html>" in error_msg.lower() or "502 bad gateway" in error_msg.lower() or "504 gateway time-out" in error_msg.lower():
+                    raise Exception(f"API 网关超时或返回了无效的 HTML 响应: {error_msg[:200]}...") from e
+                raise e
     
     @with_retry(LLM_RETRY_CONFIG)
     def stream_invoke_to_string(self, system_prompt: str, user_prompt: str, **kwargs) -> str:

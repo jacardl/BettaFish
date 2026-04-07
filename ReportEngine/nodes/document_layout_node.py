@@ -62,11 +62,19 @@ class DocumentLayoutNode(BaseNode):
         total_report_length = sum(len(str(content)) for content in reports.values())
         is_sparse = total_report_length < 2000
         
+        # 截断过长的 reports 和 forum_logs 避免溢出
+        truncated_reports = {}
+        for k, v in reports.items():
+            content = str(v)
+            truncated_reports[k] = content[:15000] if len(content) > 15000 else content
+            
+        truncated_forum_logs = str(forum_logs)[:15000] if forum_logs else ""
+        
         # 将模板原文、切片结构与多源报告一并喂给LLM，便于其理解层级与素材
         payload = {
             "query": query,
             "template": {
-                "raw": template_markdown,
+                "raw": template_markdown[:5000],  # 模板也稍微截断
                 "sections": [section.to_dict() for section in sections],
             },
             "templateOverview": template_overview
@@ -74,8 +82,8 @@ class DocumentLayoutNode(BaseNode):
                 "title": sections[0].title if sections else "",
                 "chapters": [section.to_dict() for section in sections],
             },
-            "reports": reports,
-            "forumLogs": forum_logs,
+            "reports": truncated_reports,
+            "forumLogs": truncated_forum_logs,
             "is_sparse_data": is_sparse,
             "pruning_instruction": (
                 "【强制动态大纲修剪】当前输入数据量极少，事实密度过低。你必须主动砍掉 PEST、SWOT、定量图表等深水区章节，将报告降级为一份简报。请在 tocPlan 中移除这些章节，绝对不要强逼 LLM 去填模板编造内容。" 

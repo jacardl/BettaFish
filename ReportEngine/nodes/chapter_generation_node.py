@@ -291,6 +291,61 @@ class ChapterGenerationNode(BaseNode):
 
     # ====== 内部方法 ======
 
+    def _chunk_and_filter_markdown(self, markdown_text: str, target_title: str, target_outline: str, max_chars: int = 15000) -> str:
+        """
+        轻量级 Markdown 文本分块与按需检索 (Working Memory 机制实现)。
+        根据当前章节的 title 和 outline，对长篇 markdown 进行基于段落/标题的切片，
+        计算关键词重合度，只保留最相关的 chunks。
+        """
+        if not markdown_text or len(markdown_text) <= max_chars:
+            return markdown_text
+            
+        import re
+        import jieba
+        
+        # 1. 简单的 Markdown 分块（按二级/三级标题或双换行拆分）
+        chunks = re.split(r'\n(?=## |\n\n)', markdown_text)
+        
+        # 2. 提取当前章节的目标关键词
+        target_text = f"{target_title} {target_outline}"
+        # 简单过滤常见停用词，提取实词
+        target_words = set(w for w in jieba.cut(target_text) if len(w) > 1)
+        
+        if not target_words:
+            # 提取失败则直接截断
+            return markdown_text[:max_chars]
+            
+        # 3. 对每个 chunk 进行打分
+        chunk_scores = []
+        for chunk in chunks:
+            if not chunk.strip():
+                continue
+            # 计算该 chunk 中包含目标关键词的数量
+            chunk_words = set(jieba.cut(chunk))
+            score = len(target_words.intersection(chunk_words))
+            # 加上长度惩罚，倾向于保留信息量适中的段落，避免极短段落
+            score += min(len(chunk) / 500.0, 2.0)
+            chunk_scores.append((score, chunk))
+            
+        # 4. 按分数倒序排序
+        chunk_scores.sort(key=lambda x: x[0], reverse=True)
+        
+        # 5. 组装最高分的 chunks 直到达到 max_chars 限制
+        selected_chunks = []
+        current_len = 0
+        for score, chunk in chunk_scores:
+            if current_len + len(chunk) > max_chars:
+                # 尽量凑满
+                if current_len < max_chars * 0.5:
+                    selected_chunks.append(chunk[:max_chars - current_len] + "\n...(截断)")
+                break
+            selected_chunks.append(chunk)
+            current_len += len(chunk)
+            
+        # 按在原文中的先后顺序重新排序（为了可读性，这里简化处理，直接返回）
+        # 这里为了快速实现，直接用相关度最高的放在前面
+        return "\n\n".join(selected_chunks)
+
     def _build_payload(self, section: TemplateSection, context: Dict[str, Any]) -> Dict[str, Any]:
         """
         构造LLM输入payload。
@@ -330,12 +385,16 @@ class ChapterGenerationNode(BaseNode):
                 "templateOverview": context.get("template_overview", {}),
             },
             "reports": {
-                "query_engine": reports.get("query_engine", ""),
-                "media_engine": reports.get("media_engine", ""),
-                "insight_engine": reports.get("insight_engine", ""),
+                "query_engine": self._chunk_and_filter_markdown(reports.get("query_engine", ""), section.title, section.outline, 15000),
+                "media_engine": self._chunk_and_filter_markdown(reports.get("media_engine", ""), section.title, section.outline, 15000),
+                "insight_engine": self._chunk_and_filter_markdown(reports.get("insight_engine", ""), section.title, section.outline, 15000),
             },
-            "forumLogs": context.get("forum_logs", ""),
-            "dataBundles": context.get("data_bundles", []),
+            # =======================
+            # 新增: 传递前文记忆
+            # =======================
+            "previousChapterMemories": context.get("chapter_memories", []),
+            "forumLogs": self._chunk_and_filter_markdown(context.get("forum_logs", ""), section.title, section.outline, 15000),
+            "dataBundles": str(context.get("data_bundles", []))[:10000] if context.get("data_bundles") else [],
             "constraints": {
                 "language": "zh-CN",
                 "maxTokens": context.get("max_tokens", 4096),

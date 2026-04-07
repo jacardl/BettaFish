@@ -58,6 +58,14 @@ class WordBudgetNode(BaseNode):
         返回:
             dict: 章节篇幅规划结果，包含 `totalWords`、`globalGuidelines` 与逐章 `chapters`。
         """
+        # 截断过长的内容避免溢出
+        truncated_reports = {}
+        for k, v in reports.items():
+            content = str(v)
+            truncated_reports[k] = content[:15000] if len(content) > 15000 else content
+            
+        truncated_forum_logs = str(forum_logs)[:15000] if forum_logs else ""
+
         # 输入中除了章节骨架外，还包含布局节点输出，方便约束篇幅时参考视觉主次
         payload = {
             "query": query,
@@ -68,8 +76,8 @@ class WordBudgetNode(BaseNode):
                 "title": sections[0].title if sections else "",
                 "chapters": [section.to_dict() for section in sections],
             },
-            "reports": reports,
-            "forumLogs": forum_logs,
+            "reports": truncated_reports,
+            "forumLogs": truncated_forum_logs,
         }
         user = build_word_budget_prompt(payload)
         response = self.llm_client.stream_invoke_to_string(

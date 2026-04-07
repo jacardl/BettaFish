@@ -58,42 +58,53 @@ class FactCheckerNode:
                     # 粗略估计，如果有复杂块，通常也包含数据或结构
                     heading_citation_counts[current_heading_index] += 1
                     
-        # 2. 第二遍扫描，插入置信度 Callout
+        # 2. 第二遍扫描，插入置信度 Callout 并阻断低置信度章节
         new_blocks = []
+        skip_current_heading = False
+
         for i, block in enumerate(blocks):
-            new_blocks.append(block)
-            
-            if block.get("type") == "heading" and i in heading_citation_counts:
-                citations = heading_citation_counts[i]
-                if citations == 0:
-                    confidence = "低置信度"
-                    tone = "danger"
-                    text = "【低置信度警告】本节内容缺乏外部信息源引用支撑，AI 可能存在基于先验知识的续写或推断，请谨慎参考。"
-                elif citations <= 3:
-                    confidence = "中等置信度"
-                    tone = "warning"
-                    text = "本节内容有少量信息源支撑，建议结合引用清单交叉验证。"
-                else:
-                    confidence = "高置信度"
-                    tone = "success"
-                    text = "本节内容有充足的外部信息源（多处引用）支撑。"
+            if block.get("type") == "heading":
+                skip_current_heading = False
                 
-                # 在 heading 下方插入一个 callout block
-                callout_block = {
-                    "type": "callout",
-                    "tone": tone,
-                    "title": f"事实核查评分：{confidence}",
-                    "blocks": [
-                        {
-                            "type": "paragraph",
-                            "inlines": [
+                if i in heading_citation_counts:
+                    citations = heading_citation_counts[i]
+                    if citations == 0:
+                        # 0引用的情况下，阻断后续内容的输出，且【不再输出该标题】实现完全隐藏
+                        skip_current_heading = True
+                        continue
+                    else:
+                        new_blocks.append(block)
+                        if citations <= 3:
+                            confidence = "中等置信度"
+                            tone = "warning"
+                            text = "本节内容有少量信息源支撑，建议结合引用清单交叉验证。"
+                        else:
+                            confidence = "高置信度"
+                            tone = "success"
+                            text = "本节内容有充足的外部信息源（多处引用）支撑。"
+                        
+                        # 在 heading 下方插入一个 callout block
+                        callout_block = {
+                            "type": "callout",
+                            "tone": tone,
+                            "title": f"事实核查评分：{confidence}",
+                            "blocks": [
                                 {
-                                    "text": text
+                                    "type": "paragraph",
+                                    "inlines": [
+                                        {
+                                            "text": text
+                                        }
+                                    ]
                                 }
                             ]
                         }
-                    ]
-                }
-                new_blocks.append(callout_block)
+                        new_blocks.append(callout_block)
+                else:
+                    new_blocks.append(block)
+            else:
+                # 如果当前属于低置信度 Heading 下的内容，则丢弃该 Block
+                if not skip_current_heading:
+                    new_blocks.append(block)
                 
         chapter["blocks"] = new_blocks
