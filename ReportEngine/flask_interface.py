@@ -389,6 +389,8 @@ class ReportTask:
         self.query = query
         self.custom_template = custom_template
         self.seed_context = ""
+        self.seed_filename = ""
+        self.seed_url = ""
         self.status = "pending"  # 四种状态（pending/running/completed/error）
         self.progress = 0
         self.result = None
@@ -592,7 +594,9 @@ def run_report_generation(task: ReportTask, query: str, custom_template: str = "
             seed_supplement = (
                 "\n\n=======================================================\n"
                 "【系统级补充：用户上传的绝对真实种子材料（最高优先级事实基准）】\n"
-                "提示：这部分内容是用户手动上传的确切资料，你可以将其作为参考资料引用，URL格式可标注为 '[本地附件文件]' 或源文件名。\n"
+                "提示：这部分内容是用户手动上传的确切资料，你可以将其作为参考资料引用。\n"
+                f"信息源标题(Title): {task.seed_filename}\n"
+                f"原始链接(URL): {task.seed_url}\n"
                 "=======================================================\n"
                 f"{task.seed_context}\n\n"
             )
@@ -718,13 +722,22 @@ def get_seed_content(seed_id: str):
         if ".." in seed_id or "/" in seed_id or "\\" in seed_id:
             return jsonify({'success': False, 'error': '无效的 seed_id'}), 400
 
-        seed_path = Path(settings.OUTPUT_DIR) / 'seeds' / f"{seed_id}.txt"
+        seed_path = Path(settings.OUTPUT_DIR) / 'seeds' / f"{seed_id}.json"
         if not seed_path.exists():
-            return jsonify({'success': False, 'error': 'Seed 文件不存在或已过期'}), 404
+            # 兼容旧版本 .txt
+            old_path = Path(settings.OUTPUT_DIR) / 'seeds' / f"{seed_id}.txt"
+            if not old_path.exists():
+                return jsonify({'success': False, 'error': 'Seed 文件不存在或已过期'}), 404
+            content = old_path.read_text(encoding='utf-8')
+            return Response(content, mimetype='text/plain')
 
-        content = seed_path.read_text(encoding='utf-8')
-        # 返回纯文本，浏览器可以直接原生渲染显示
-        return Response(content, mimetype='text/plain')
+        try:
+            data = json.loads(seed_path.read_text(encoding='utf-8'))
+            content = data.get('text', '')
+            return Response(content, mimetype='text/plain')
+        except Exception as e:
+            logger.error(f"解析 Seed JSON 失败: {e}")
+            return jsonify({'success': False, 'error': '解析数据格式失败'}), 500
     except Exception as e:
         logger.error(f"读取 Seed 内容失败: {e}")
         return jsonify({'success': False, 'error': '读取内容时发生错误'}), 500
@@ -783,6 +796,10 @@ def analyze_seed():
         if not seed_context:
             return jsonify({'success': False, 'error': '无法从附件中提取任何文本'}), 400
 
+        # 获取文件名用于展示
+        file_names = [f.filename for f in files]
+        primary_filename = file_names[0] if file_names else "上传的附件"
+
         # 截断过长文本，避免大模型Token爆炸（这里取前15000字符作为上下文参考）
         context_for_optimizer = seed_context[:15000]
 
@@ -798,12 +815,21 @@ def analyze_seed():
         if not response.success:
             return jsonify({'success': False, 'error': response.error_message}), 500
 
-        # 将完整的 seed_context 保存到临时目录，供后续生成报告时调用
+        # 将完整的 seed_context 和元数据保存到临时目录，供后续生成报告时调用
         seed_id = f"seed_{int(time.time()*1000)}"
         seed_dir = Path(settings.OUTPUT_DIR) / 'seeds'
         seed_dir.mkdir(parents=True, exist_ok=True)
-        seed_path = seed_dir / f"{seed_id}.txt"
-        seed_path.write_text(seed_context, encoding='utf-8')
+        
+        # 结构化保存，方便后续注入为合法信息源
+        seed_data = {
+            "text": seed_context,
+            "filename": primary_filename,
+            "fake_url": f"seed://{seed_id}/{primary_filename}",
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        seed_path = seed_dir / f"{seed_id}.json"
+        seed_path.write_text(json.dumps(seed_data, ensure_ascii=False), encoding='utf-8')
 
         return jsonify({
             'success': True,
@@ -931,13 +957,19 @@ def get_history_tasks():
             memory_tasks = [t.to_dict() for t in tasks_registry.values() if t.status == 'completed']
             
         # 简单去重，优先使用内存中的数据（可能包含更完整的元数据）
-        seen_paths = {t.get('report_file_path') for t in memory_tasks if t.get('report_file_path')}
+        # 使用 report_file_name 进行去重，因为不同环境下的绝对路径和相对路径格式可能不同
+        seen_names = {t.get('report_file_name'): t for t in memory_tasks if t.get('report_file_name')}
         final_tasks = memory_tasks.copy()
         
         for t in tasks:
-            if t.get('report_file_path') not in seen_paths:
+            mem_task = seen_names.get(t.get('report_file_name'))
+            if mem_task is None:
                 final_tasks.append(t)
-                seen_paths.add(t.get('report_file_path'))
+                seen_names[t.get('report_file_name')] = t
+            else:
+                # 内存中的任务可能缺少 related_reports 信息，从磁盘解析的任务中补充
+                if 'related_reports' not in mem_task or not mem_task['related_reports']:
+                    mem_task['related_reports'] = t.get('related_reports', [])
                 
         # 再次按时间排序
         final_tasks.sort(key=lambda x: x['updated_at'], reverse=True)
@@ -1057,55 +1089,9 @@ def get_status():
         task_id = request.args.get('task_id')
         engines_status = check_engines_ready(task_id=task_id)
 
-        # 如果当前没有在内存中的任务，尝试从本地查找最新生成的报告作为兜底
+        # 移除自动兜底最新历史文件的逻辑，避免新任务开始前显示旧报告
+        # （如果需要查看历史报告，请使用历史记录列表功能）
         task_data = current_task.to_dict() if current_task else None
-        
-        if not task_data and report_agent:
-            output_dir = Path(report_agent.config.OUTPUT_DIR)
-            if output_dir.exists():
-                html_files = list(output_dir.glob("final_report_*.html"))
-                if html_files:
-                    # 找到最新的文件
-                    latest_html = max(html_files, key=lambda p: p.stat().st_mtime)
-                    
-                    # 尝试读取对应的内容和元数据
-                    task_data = {
-                        'task_id': f"recovered_file_{latest_html.name}",
-                        'query': '历史任务 (从文件恢复)',
-                        'status': 'completed',
-                        'progress': 100,
-                        'error_message': '',
-                        'created_at': datetime.fromtimestamp(latest_html.stat().st_ctime).isoformat(),
-                        'updated_at': datetime.fromtimestamp(latest_html.stat().st_mtime).isoformat(),
-                        'has_result': True,
-                        'report_file_ready': True,
-                        'report_file_name': latest_html.name,
-                        'report_file_path': str(latest_html.resolve()),
-                        'state_file_ready': False,
-                        'state_file_path': '',
-                        'ir_file_ready': False,
-                        'ir_file_path': '',
-                        'markdown_file_ready': False,
-                        'markdown_file_path': ''
-                    }
-                    
-                    # 尝试关联寻找IR和State文件
-                    base_name_parts = latest_html.stem.replace('final_report_', '').split('_')
-                    if len(base_name_parts) >= 2:
-                        timestamp = f"{base_name_parts[-2]}_{base_name_parts[-1]}"
-                        query_safe = '_'.join(base_name_parts[:-2])
-                        
-                        ir_filename = f"report_ir_{query_safe}_{timestamp}.json"
-                        ir_path = Path(report_agent.config.DOCUMENT_IR_OUTPUT_DIR) / ir_filename
-                        if ir_path.exists():
-                            task_data['ir_file_ready'] = True
-                            task_data['ir_file_path'] = str(ir_path.resolve())
-                            
-                        state_filename = f"report_state_{query_safe}_{timestamp}.json"
-                        state_path = output_dir / state_filename
-                        if state_path.exists():
-                            task_data['state_file_ready'] = True
-                            task_data['state_file_path'] = str(state_path.resolve())
 
         return jsonify({
             'success': True,
@@ -1161,7 +1147,18 @@ def generate_report():
         query = data.get('query', '智能舆情分析报告')
         custom_template = data.get('custom_template', '')
         seed_id = data.get('seed_id', '')
-        task_id = data.get('task_id', f"report_{int(time.time())}")
+        
+        # 精简任务ID生成逻辑：短名称+年月日+短编码
+        # 取 query 的前4个字符作为短名称（过滤特殊字符）
+        import re
+        import random
+        import string
+        short_name = re.sub(r'[^\w\u4e00-\u9fa5]', '', query)[:4] or 'task'
+        date_str = datetime.now().strftime('%Y%m%d')
+        short_code = ''.join(random.choices(string.ascii_lowercase + string.digits, k=4))
+        default_task_id = f"{short_name}_{date_str}_{short_code}"
+        
+        task_id = data.get('task_id') or default_task_id
 
         # 清空日志文件
         clear_report_log()
@@ -1187,13 +1184,25 @@ def generate_report():
 
         # 尝试读取种子文件上下文
         if seed_id:
-            seed_path = Path(settings.OUTPUT_DIR) / 'seeds' / f"{seed_id}.txt"
-            if seed_path.exists():
-                try:
-                    task.seed_context = seed_path.read_text(encoding='utf-8')
-                    logger.info(f"任务 {task_id} 已成功加载种子上下文 {seed_id}，大小: {len(task.seed_context)} 字符")
-                except Exception as e:
-                    logger.error(f"读取种子上下文 {seed_id} 失败: {e}")
+            seed_path = Path(settings.OUTPUT_DIR) / 'seeds' / f"{seed_id}.json"
+            try:
+                if seed_path.exists():
+                    seed_data = json.loads(seed_path.read_text(encoding='utf-8'))
+                    task.seed_context = seed_data.get('text', '')
+                    # 结构化保存文件名和伪造URL，用于后续包装为 Search 结果
+                    task.seed_filename = seed_data.get('filename', '上传的附件')
+                    task.seed_url = seed_data.get('fake_url', f"seed://{seed_id}/attachment")
+                    logger.info(f"任务 {task_id} 已成功加载种子上下文 {seed_id} (JSON)，大小: {len(task.seed_context)} 字符")
+                else:
+                    # 兼容旧版本
+                    old_path = Path(settings.OUTPUT_DIR) / 'seeds' / f"{seed_id}.txt"
+                    if old_path.exists():
+                        task.seed_context = old_path.read_text(encoding='utf-8')
+                        task.seed_filename = "上传的附件"
+                        task.seed_url = f"seed://{seed_id}/attachment"
+                        logger.info(f"任务 {task_id} 已成功加载种子上下文 {seed_id} (TXT)，大小: {len(task.seed_context)} 字符")
+            except Exception as e:
+                logger.error(f"读取种子上下文 {seed_id} 失败: {e}")
 
         with task_lock:
             current_task = task

@@ -44,8 +44,13 @@ class FactCheckerNode:
         # 1. 第一遍扫描，统计每个 heading 下的引用数量
         for i, block in enumerate(blocks):
             if block.get("type") == "heading":
-                current_heading_index = i
-                heading_citation_counts[current_heading_index] = 0
+                # 仅对二级及以上的标题进行事实核查评分，一级标题通常为大章节容器，无需评分
+                level = block.get("level", 2)
+                if level > 1:
+                    current_heading_index = i
+                    heading_citation_counts[current_heading_index] = 0
+                else:
+                    current_heading_index = -1
             elif current_heading_index != -1:
                 # 检查段落中的 superscript link 数量
                 if block.get("type") == "paragraph":
@@ -66,12 +71,30 @@ class FactCheckerNode:
             if block.get("type") == "heading":
                 skip_current_heading = False
                 
+                # 如果这个 heading 不在 heading_citation_counts 中，说明它是一级标题
                 if i in heading_citation_counts:
                     citations = heading_citation_counts[i]
                     if citations == 0:
-                        # 0引用的情况下，阻断后续内容的输出，且【不再输出该标题】实现完全隐藏
+                        # 0引用的情况下，阻断后续内容的输出，但保留标题，显示低置信度警告
                         skip_current_heading = True
-                        continue
+                        new_blocks.append(block)
+                        
+                        callout_block = {
+                            "type": "callout",
+                            "tone": "danger",
+                            "title": "事实核查评分：低置信度",
+                            "blocks": [
+                                {
+                                    "type": "paragraph",
+                                    "inlines": [
+                                        {
+                                            "text": "无数据支撑，无法分析。"
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                        new_blocks.append(callout_block)
                     else:
                         new_blocks.append(block)
                         if citations <= 3:

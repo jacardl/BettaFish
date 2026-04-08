@@ -195,7 +195,7 @@ class WeiboMultilingualSentimentAnalyzer:
             local_model_path = os.path.join(weibo_sentiment_path, "model")
 
             # 检查本地是否已有模型
-            if os.path.exists(local_model_path):
+            if os.path.exists(local_model_path) and os.path.exists(os.path.join(local_model_path, "config.json")):
                 print("从本地加载模型...")
                 self.tokenizer = AutoTokenizer.from_pretrained(local_model_path)
                 self.model = AutoModelForSequenceClassification.from_pretrained(

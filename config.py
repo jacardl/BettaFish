@@ -127,5 +127,7 @@ def reload_settings() -> Settings:
     """
     
     global settings
-    settings = Settings()
+    # Pydantic v2 的 BaseSettings 在实例化时，默认不会强行重新读取已被环境变量（os.environ）缓存的值
+    # 为了确保从刚被修改的 .env 文件中读取最新值，我们需要显式地指定 _env_file
+    settings = Settings(_env_file=ENV_FILE)
     return settings

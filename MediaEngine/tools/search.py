@@ -270,6 +270,7 @@ class AnspireAISearch:
     Anspire AI Search 客户端
     """
     ANSPIRE_BASE_URL = settings.ANSPIRE_BASE_URL or "https://plugin.anspire.cn/api/ntsearch/search"
+    ANSPIRE_PRO_BASE_URL = settings.ANSPIRE_PRO_BASE_URL or "https://plugin.anspire.cn/api/ntsearch/prosearch"
 
     def __init__(self, api_key: Optional[str] = None):
         """
@@ -288,6 +289,9 @@ class AnspireAISearch:
             'Connection': 'keep-alive',
             'Accept': '*/*'
         }
+
+        # 从环境变量/配置中读取是否开启 PRO 模式
+        self.use_pro = getattr(settings, "ANSPIRE_USE_PRO", True)
 
     def _parse_search_response(self, response_dict: Dict[str, Any], query: str) -> AnspireResponse:
         final_response = AnspireResponse(query=query)
@@ -317,8 +321,15 @@ class AnspireAISearch:
             "ToTime": kwargs.get("ToTime", "")
         }
         
+        # PRO 版特定参数
+        if self.use_pro:
+            payload["detail"] = True
+            target_url = self.ANSPIRE_PRO_BASE_URL
+        else:
+            target_url = self.ANSPIRE_BASE_URL
+        
         try:
-            response = requests.get(self.ANSPIRE_BASE_URL, headers=self._headers, params=payload, timeout=30)
+            response = requests.get(target_url, headers=self._headers, params=payload, timeout=30)
             response.raise_for_status()  # 如果HTTP状态码是4xx或5xx，则抛出异常
 
             response_dict = response.json()

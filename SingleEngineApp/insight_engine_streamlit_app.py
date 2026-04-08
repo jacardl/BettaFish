@@ -58,12 +58,14 @@ def main():
         auto_query = query_params.get('query', '')
         auto_search = query_params.get('auto_search', 'false').lower() == 'true'
         task_id = query_params.get('task_id', '')
+        seed_id = query_params.get('seed_id', '')
     except AttributeError:
         # 兼容旧版本
         query_params = st.experimental_get_query_params()
         auto_query = query_params.get('query', [''])[0]
         auto_search = query_params.get('auto_search', ['false'])[0].lower() == 'true'
         task_id = query_params.get('task_id', [''])[0]
+        seed_id = query_params.get('seed_id', [''])[0]
 
     # ----- 配置被硬编码 -----
     # 强制使用 Kimi
@@ -136,13 +138,13 @@ def main():
         )
 
         # 执行研究
-        execute_research(query, config, task_id)
+        execute_research(query, config, task_id, seed_id)
     elif 'final_report' in st.session_state and 'agent' in st.session_state:
         # 如果已经执行过，保持显示结果
         display_results(st.session_state.agent, st.session_state.final_report)
 
 
-def execute_research(query: str, config: Settings, task_id: str = ""):
+def execute_research(query: str, config: Settings, task_id: str = "", seed_id: str = ""):
     """执行研究"""
     try:
         # 创建进度条
@@ -154,6 +156,8 @@ def execute_research(query: str, config: Settings, task_id: str = ""):
         agent = DeepSearchAgent(config)
         if task_id:
             agent.state.task_id = task_id
+        if seed_id:
+            agent.state.seed_id = seed_id
         st.session_state.agent = agent
 
         progress_bar.progress(10)

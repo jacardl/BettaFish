@@ -61,10 +61,23 @@ class LLMClient:
             "api_key": api_key,
             "max_retries": 0,
         }
+        
         if base_url:
             client_kwargs["base_url"] = base_url
-            if "omnisaas.cn" in base_url:
-                client_kwargs["default_headers"] = {"apikey": api_key}
+            
+        import httpx
+        # 创建自定义的 httpx Client 以绕过底层的 Header 规范化机制
+        # HTTP/1.1 允许保留 Header 的原始大小写
+        headers = {}
+        if base_url and "omnisaas.cn" in base_url:
+            headers["apikey"] = api_key
+            
+        custom_http_client = httpx.Client(
+            headers=headers,
+            timeout=self.timeout
+        )
+        client_kwargs["http_client"] = custom_http_client
+
         self.client = OpenAI(**client_kwargs)
 
     @with_retry(LLM_RETRY_CONFIG)

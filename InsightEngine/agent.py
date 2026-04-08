@@ -550,6 +550,42 @@ class DeepSearchAgent:
         """生成报告结构"""
         logger.info(f"\n[步骤 1] 生成报告结构...")
 
+        # 提取种子文件（如果有）
+        seed_context = ""
+        seed_data_dict = {}
+        if hasattr(self.state, 'seed_id') and self.state.seed_id:
+            try:
+                import os
+                from pathlib import Path
+                # 假设公共输出目录在上一级的 output 中
+                root_dir = Path(__file__).parent.parent
+                seed_path_json = root_dir / 'output' / 'seeds' / f"{self.state.seed_id}.json"
+                seed_path_txt = root_dir / 'output' / 'seeds' / f"{self.state.seed_id}.txt"
+                if seed_path_json.exists():
+                    import json
+                    seed_data_dict = json.loads(seed_path_json.read_text(encoding='utf-8'))
+                    seed_context = seed_data_dict.get('text', '')
+                    logger.info(f"读取到种子文件(JSON)内容，长度: {len(seed_context)}")
+                elif seed_path_txt.exists():
+                    seed_context = seed_path_txt.read_text(encoding='utf-8')
+                    seed_data_dict = {
+                        "text": seed_context,
+                        "filename": "用户上传的附件",
+                        "fake_url": f"seed://{self.state.seed_id}/attachment",
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    logger.info(f"读取到种子文件(TXT)内容，长度: {len(seed_context)}")
+            except Exception as e:
+                logger.warning(f"读取种子文件失败: {e}")
+                
+        self._seed_data_dict = seed_data_dict
+
+        # 增强 query
+        if seed_context:
+            enhanced_query = f"{query}\n\n==========================\n【用户上传的参考资料/种子文件（请作为高优先级事实分析参考）】:\n{seed_context[:10000]}\n=========================="
+            self.state.query = enhanced_query
+            query = enhanced_query
+
         # 创建报告结构节点
         report_structure_node = ReportStructureNode(self.llm_client, query)
 
@@ -715,6 +751,50 @@ class DeepSearchAgent:
             logger.info(_message)
         else:
             logger.info("  - 未找到搜索结果")
+
+        # 将 Seed 文件内容作为最高优的“事实信息源”注入到采集内容中
+        if paragraph_index == 0 and getattr(self, '_seed_data_dict', {}):
+            logger.info("  - 注入 Seed 文件作为首段采集事实来源...")
+            seed_text = self._seed_data_dict.get('text', '')
+            seed_title = self._seed_data_dict.get('filename', '用户上传的附件')
+            seed_url = self._seed_data_dict.get('fake_url', f"seed://attachment")
+            
+            # 按段落拆分长文本，每500-1000字左右作为一个独立“事实片段”
+            seed_chunks = []
+            paragraphs = [p.strip() for p in seed_text.split('\n') if p.strip()]
+            current_chunk = []
+            current_len = 0
+            for p in paragraphs:
+                current_chunk.append(p)
+                current_len += len(p)
+                if current_len > 800:
+                    seed_chunks.append("\n".join(current_chunk))
+                    current_chunk = []
+                    current_len = 0
+            if current_chunk:
+                seed_chunks.append("\n".join(current_chunk))
+                
+            if not seed_chunks:
+                seed_chunks = [seed_text]
+
+            # 将切片转化为类似搜索结果的格式
+            seed_results = []
+            for i, chunk in enumerate(seed_chunks):
+                seed_results.append({
+                    "title": f"【上传附件】{seed_title} (片段 {i+1}/{len(seed_chunks)})",
+                    "url": seed_url,
+                    "content": chunk,
+                    "score": 100.0,
+                    "raw_content": chunk,
+                    "published_date": datetime.now().isoformat(),
+                    "platform": "seed_file",
+                    "content_type": "document",
+                    "author": "用户上传",
+                    "engagement": 0,
+                })
+            
+            # 把 seed 的结果插入到从数据库搜回来的结果最前面
+            search_results = seed_results + search_results
 
         # 更新状态中的搜索历史
         paragraph.research.add_search_results(search_query, search_results)

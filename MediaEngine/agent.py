@@ -174,7 +174,27 @@ class DeepSearchAgent:
     def _generate_report_structure(self, query: str):
         """生成报告结构"""
         logger.info(f"\n[步骤 1] 生成报告结构...")
-        
+
+        # 提取种子文件（如果有）
+        seed_context = ""
+        if hasattr(self.state, 'seed_id') and self.state.seed_id:
+            try:
+                import os
+                from pathlib import Path
+                root_dir = Path(__file__).parent.parent
+                seed_path = root_dir / 'output' / 'seeds' / f"{self.state.seed_id}.txt"
+                if seed_path.exists():
+                    seed_context = seed_path.read_text(encoding='utf-8')
+                    logger.info(f"读取到种子文件内容，长度: {len(seed_context)}")
+            except Exception as e:
+                logger.warning(f"读取种子文件失败: {e}")
+
+        # 增强 query
+        if seed_context:
+            enhanced_query = f"{query}\n\n==========================\n【用户上传的参考资料/种子文件（请作为高优先级事实分析参考）】:\n{seed_context[:10000]}\n=========================="
+            self.state.query = enhanced_query
+            query = enhanced_query
+
         # 创建报告结构节点
         report_structure_node = ReportStructureNode(self.llm_client, query)
         

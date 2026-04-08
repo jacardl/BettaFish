@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     MAX_HIGH_CONFIDENCE_SENTIMENT_RESULTS: int = Field(0, description="高置信度情感分析最大数")
     OUTPUT_DIR: str = Field("reports", description="输出路径")
     SAVE_INTERMEDIATE_STATES: bool = Field(True, description="是否保存中间状态")
+    ANSPIRE_API_KEY: str | None = None
+    ANSPIRE_BASE_URL: str | None = "https://plugin.anspire.cn/api/ntsearch/search"
+    ANSPIRE_PRO_BASE_URL: str | None = "https://plugin.anspire.cn/api/ntsearch/prosearch"
+    ANSPIRE_USE_PRO: bool = True
 
     class Config:
         env_file = ".env"

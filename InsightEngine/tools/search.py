@@ -67,6 +67,7 @@ class MediaCrawlerDB:
     """升级为基于 web-access 实时联网查询的舆情检索工具"""
     
     ANSPIRE_BASE_URL = os.getenv("ANSPIRE_BASE_URL", "https://plugin.anspire.cn/api/ntsearch/search")
+    ANSPIRE_PRO_BASE_URL = os.getenv("ANSPIRE_PRO_BASE_URL", "https://plugin.anspire.cn/api/ntsearch/prosearch")
     
     def __init__(self):
         """
@@ -75,7 +76,7 @@ class MediaCrawlerDB:
         self.api_key = os.getenv("ANSPIRE_API_KEY")
         if not self.api_key:
             # 兼容旧配置项
-            self.api_key = settings.ANSPIRE_API_KEY
+            self.api_key = getattr(settings, "ANSPIRE_API_KEY", None)
             
         if not self.api_key:
             logger.warning("未配置 ANSPIRE_API_KEY，实时搜索功能可能受限")
@@ -87,6 +88,10 @@ class MediaCrawlerDB:
             'Accept': '*/*'
         }
         
+        # 读取是否使用 Pro 的配置（默认 True）
+        use_pro_env = os.getenv("ANSPIRE_USE_PRO", "True").lower()
+        self.use_pro = use_pro_env in ("true", "1", "yes", "t")
+        
     def _execute_realtime_search(self, query: str, insite: str = "", top_k: int = 10, from_time: str = "", to_time: str = "") -> List[Dict[str, Any]]:
         """执行实时网页搜索"""
         payload = {
@@ -96,8 +101,15 @@ class MediaCrawlerDB:
             "FromTime": from_time,
             "ToTime": to_time
         }
+        
+        if self.use_pro:
+            payload["detail"] = True
+            target_url = self.ANSPIRE_PRO_BASE_URL
+        else:
+            target_url = self.ANSPIRE_BASE_URL
+            
         try:
-            response = requests.get(self.ANSPIRE_BASE_URL, headers=self._headers, params=payload, timeout=30)
+            response = requests.get(target_url, headers=self._headers, params=payload, timeout=30)
             response.raise_for_status()
             data = response.json()
             return data.get("results", [])

@@ -143,6 +143,8 @@ class Paragraph:
 class State:
     """整个报告的状态"""
     query: str = ""                                                # 原始查询
+    task_id: str = ""
+    seed_id: str = ""
     report_title: str = ""                                         # 报告标题
     paragraphs: List[Paragraph] = field(default_factory=list)     # 段落列表
     final_report: str = ""                                         # 最终报告内容

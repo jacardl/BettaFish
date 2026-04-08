@@ -76,6 +76,8 @@ class Settings(BaseSettings):
     BOCHA_WEB_SEARCH_API_KEY: Optional[str] = Field(None, description="Bocha API（申请地址：https://open.bochaai.com/）API密钥，用于Bocha搜索")
     # Anspire AI Search API（申请地址：https://open.anspire.cn/）
     ANSPIRE_BASE_URL: Optional[str] = Field("https://plugin.anspire.cn/api/ntsearch/search", description="Anspire AI 搜索BaseUrl")
+    ANSPIRE_PRO_BASE_URL: Optional[str] = Field("https://plugin.anspire.cn/api/ntsearch/prosearch", description="Anspire AI 高级搜索BaseUrl")
+    ANSPIRE_USE_PRO: bool = Field(True, description="是否使用 Anspire Pro 接口")
     ANSPIRE_API_KEY: Optional[str] = Field(None, description="Anspire AI Search API（申请地址：https://open.anspire.cn/）API密钥，用于Anspire搜索")
 
     class Config:

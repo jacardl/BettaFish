@@ -112,21 +112,7 @@ document_layout_output_schema = {
             "type": "object",
             "properties": {
                 "summary": {"type": "string"},
-                "highlights": {"type": "array", "items": {"type": "string"}},
-                "kpis": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "label": {"type": "string"},
-                            "value": {"type": "string"},
-                            "delta": {"type": "string"},
-                            "tone": {"type": "string", "enum": ["up", "down", "neutral"]},
-                        },
-                        "required": ["label", "value"],
-                    },
-                },
-                "actions": {"type": "array", "items": {"type": "string"}},
+                "highlights": {"type": "array", "items": {"type": "string"}}
             },
         },
         "themeTokens": {"type": "object"},
@@ -329,12 +315,19 @@ SYSTEM_PROMPT_CHAPTER_JSON = f"""
    - 当允许使用PEST块时，分别填写 political/economic/social/technological 数组，单项至少包含 title/label/text 之一，可附加 detail/source/trend 字段；title/summary 字段用于概览说明；
    - **PEST四维度说明**：political（政治因素：政策法规、政府态度、监管环境）、economic（经济因素：经济周期、利率汇率、市场需求）、social（社会因素：人口结构、文化趋势、消费习惯）、technological（技术因素：技术创新、研发趋势、数字化程度）；
    - **特别注意：trend 字段只允许填写趋势评估（"正面利好"/"负面影响"/"中性"/"不确定"/"持续观察"）；任何关于趋势的文字叙述、详细说明、来源或扩展描述必须写入 detail 字段，禁止在 trend 字段中混入描述性文字。**
-8. 如需引用图表/交互组件，统一用widgetType表示（例如chart.js/line、chart.js/doughnut）。
-9. **极度重要：目录层级限制**：严格按照 outline 中列出的大纲层级进行生成，**最多只允许生成到二级标题（即 1.1, 1.2）**。绝对禁止在二级标题之下再拆分生成三级或更深层级的子标题（如 1.1.1, 1.1.2）。
-10. engineQuote 仅用于呈现单Agent的原话：使用 block.type="engineQuote"，engine 取值 insight/media/query，title 必须固定为对应Agent名字（insight->Insight Agent，media->Media Agent，query->Query Agent，不可自定义），内部 blocks 只允许 paragraph，paragraph.inlines 的 marks 仅可使用 bold/italic（可留空），禁止在 engineQuote 中放表格/图表/引用/公式等；当 reports 或 forumLogs 中有明确的文字段落、结论、数字/时间等可直接引用时，优先分别从 Query/Media/Insight 三个 Agent 摘出关键原文或文字版数据放入 engineQuote，尽量覆盖三类 Agent 而非只用单一来源，严禁臆造内容或把表格/图表改写进 engineQuote。
-11. 如果chapterPlan中包含target/min/max或sections细分预算，请尽量贴合，必要时在notes允许的范围内突破，同时在结构上体现详略；
-12. 一级标题需使用中文数字（“一、二、三”），二级标题使用阿拉伯数字（“1.1、1.2”），heading.text中直接写好编号，与outline顺序对应。**再次强调：最多只允许到二级标题。**
-13. 严禁输出外部图片/AI生图链接，仅可使用Chart.js图表、表格、色块、callout等HTML原生组件；如需视觉辅助请改为文字描述或数据表；
+8. 如需引用图表/交互组件，统一用widgetType表示（例如echarts/bar、echarts/line、echarts/pie）。
+9. **极度重要：关于重要事件时间线与考据**：如果在章节中需要呈现时间线（Timeline）或事件回顾，**严禁自行捏造虚假的 API 状态码（如 404）、哈希值、不存在的政府公文编号（如 XZWW-xxx）、或者伪造的专业网友ID（如 @数据洁癖、@测绘老炮）进行赛博考据！**
+   - 如果你要写时间线，**必须**使用表格（block.type="table"）进行结构化呈现，且内容必须 **100%** 来自于提供的 `generationPayload` 中的真实搜索数据。
+   - 如果在提供的素材中找不到确切的、有新闻来源支撑的事件节点，**宁可输出“暂无相关事件数据”，也绝对不允许自己像写硬核科幻小说或悬疑侦探小说一样去编造“全域清算”、“六信源API交叉验证”、“DOM审计报告”等看似专业实则完全虚假的情节！**
+10. **极度重要：严格的大纲保真度（Strict Outline Fidelity）与层级限制**：
+    - 你必须且只能为 `section.outline` 中明确列出的小节生成对应的 `heading` 块。
+    - **绝对禁止自行发明、追加任何不在 `outline` 列表中的二级或三级子标题！**（例如，如果 outline 只有 2.1 和 2.2，你绝不能生成 2.3 或 2.4 或 2.1.1）。
+    - 最多只允许生成到二级标题（即 1.1, 1.2）。
+    - **（注意：这不影响你在章节末尾生成 block.type="citationList" 引用清单，引用清单是独立区块，必须按需生成）**
+11. engineQuote 仅用于呈现单Agent的原话：使用 block.type="engineQuote"，engine 取值 insight/media/query，title 必须固定为对应Agent名字（insight->Insight Agent，media->Media Agent，query->Query Agent，不可自定义），内部 blocks 只允许 paragraph，paragraph.inlines 的 marks 仅可使用 bold/italic（可留空），禁止在 engineQuote 中放表格/图表/引用/公式等；当 reports 或 forumLogs 中有明确的文字段落、结论、数字/时间等可直接引用时，优先分别从 Query/Media/Insight 三个 Agent 摘出关键原文或文字版数据放入 engineQuote，尽量覆盖三类 Agent 而非只用单一来源，严禁臆造内容或把表格/图表改写进 engineQuote。
+12. 如果chapterPlan中包含target/min/max或sections细分预算，请尽量贴合，必要时在notes允许的范围内突破，同时在结构上体现详略；
+13. 一级标题需使用中文数字（“一、二、三”），二级标题使用阿拉伯数字（“1.1、1.2”），heading.text中直接写好编号，与outline顺序对应。**再次强调：严格对照 outline，绝不多写未要求的 heading！**
+14. 严禁输出外部图片/AI生图链接，仅可使用 ECharts 图表、表格、色块、callout等原生组件；如需视觉辅助请改为文字描述或数据表；
 14. **高质量商业写作规范（核心）**：
     - **引人入胜的Hook（钩子）**：在章节开头或重要段落使用引人注意的切入点（如核心数据、尖锐的现象冲突、或反常识结论），拒绝平庸无聊的开头套话。
     - **逻辑流与叙事连贯**：段落之间必须有清晰的逻辑递进（例如：现象 -> 原因 -> 影响 -> 应对）。
@@ -356,7 +349,7 @@ SYSTEM_PROMPT_CHAPTER_JSON = f"""
 24. **信息源引用规则（重要！）**：
     - 对于从外部信息源（新闻、文章、社交媒体、搜索结果）获取的事实性陈述、数据、引语，必须在**陈述文字的右上角添加上角标索引标记**；
     - 索引格式：使用`superscript`标记包裹索引数字，同时用`link`标记关联到引用清单锚点，例如：`marks: [{{"type": "superscript"}}, {{"type": "link", "href": "#citation-1"}}]`，text内容为`[1]`；
-    - 所有引用信息源必须在章节末尾（或全文末尾）使用`block.type="citationList"`生成引用清单；
+    - **【强制要求】所有引用信息源必须在章节末尾（或全文末尾）单独作为一个块生成，必须使用 `block.type="citationList"` 生成引用清单，该区块绝对不受目录层级限制，千万不要遗漏**；
     - 每个引用项必须包含：`index`（序号，从1开始递增）、`title`（信息源标题）、`url`（原始链接）。对于 `publishedAt`（发布日期），**只有在源数据中明确给出了该文章的发布时间时才允许填写**。如果原文中没有写发布时间，请直接忽略 `publishedAt` 字段，**绝对禁止将当前系统时间（如今天）或生成报告的时间当作该文章的发布时间填入！**
     - **极度重要警告：绝对禁止编造虚假的参考资料！**
     - 你所有的引用来源（title 和 url）必须**100% 来源于 `generationPayload` 中明确提供过的真实链接（必须以 http:// 或 https:// 开头）或真实附件文件名称（如 file:///xxx.pdf）**。
@@ -431,11 +424,9 @@ SYSTEM_PROMPT_DOCUMENT_LAYOUT = f"""
 
 目标：
 1. 生成具有中文叙事风格的 title/subtitle/tagline，并确保可直接放在封面中央，文案中需自然提到"文章总览"；
-2. 给出 hero：包含summary、highlights、actions、kpis（可含tone/delta），用于强调重点洞察与执行提示；
-   - **防幻觉与强相关约束**：hero 中的 `kpis` 和 `highlights` 必须是从提供的 `reports` 数据中真实提取的。
-   - **宁缺毋滥（闭嘴原则）**：如果在提供的分析素材中找不到明确的 KPI 数据（如确切的讨论量、好评率百分比等），你**必须**输出“暂无数据”或直接不生成该指标，**绝对禁止**一本正经地胡说八道或捏造任何虚假数字。
-   - 绝对禁止捏造毫不相干的指标名称（例如：不要在游戏报告中捏造“中科院物理验证R²”、“GitHub Stars”或“文化建模完成度”等毫无关联的指标）。
-   - 如果是游戏/文化产品，且素材中有真实数据支撑，KPI可以是“24h讨论量”、“正向评论占比”、“核心玩家关注度”等。请根据主题自动适配最合理、最真实的指标。
+2. 给出 hero：包含 summary 和 highlights，用于强调重点洞察；
+   - **防幻觉与强相关约束**：hero 中的 `summary` 和 `highlights` 必须是从提供的 `reports` 数据中真实提取的。
+   - **精简与真实原则**：绝对禁止捏造、猜测任何百分比、比例、评分或数据指标。所有总结必须有源数据支撑，如果不确定则宁可省略。
 3. 输出 tocPlan，一级目录固定用中文数字（"一、二、三"），二级目录用"1.1/1.2"，可在description里说明详略；如需定制目录标题，请填写 tocTitle；
 4. 根据模板结构和素材密度，为 themeTokens / layoutNotes 提出字体、字号、留白建议（需特别强调目录、正文一级标题字号保持统一），如需色板或暗黑模式兼容也在此说明；
 5. 严禁要求外部图片或AI生图，推荐Chart.js图表、表格、色块、KPI卡等可直接渲染的原生组件；

@@ -395,20 +395,12 @@ class HTMLRenderer:
         wordcloud2 = self._load_lib("wordcloud2.min.js")
 
         # 生成嵌入式script标签，并为每个库添加CDN fallback机制
-        # Chart.js - 主要图表库
-        chartjs_tag = self._build_script_with_fallback(
-            inline_code=chartjs,
-            cdn_url="https://cdn.jsdelivr.net/npm/chart.js",
-            check_expression="typeof Chart !== 'undefined'",
-            lib_name="Chart.js"
-        )
-
-        # Chart.js Sankey插件
-        sankey_tag = self._build_script_with_fallback(
-            inline_code=chartjs_sankey,
-            cdn_url="https://cdn.jsdelivr.net/npm/chartjs-chart-sankey@4",
-            check_expression="typeof Chart !== 'undefined' && Chart.controllers && Chart.controllers.sankey",
-            lib_name="chartjs-chart-sankey"
+        # ECharts - 主要图表库 (替换原有的 Chart.js)
+        echarts_tag = self._build_script_with_fallback(
+            inline_code="", # 暂时不内联巨大文件，直接用CDN
+            cdn_url="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js",
+            check_expression="typeof echarts !== 'undefined'",
+            lib_name="ECharts"
         )
 
         # wordcloud2 - 词云渲染
@@ -453,8 +445,7 @@ class HTMLRenderer:
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{self._escape_html(title)}</title>
-  {chartjs_tag}
-  {sankey_tag}
+  {echarts_tag}
   {wordcloud_tag}
   {html2canvas_tag}
   {jspdf_tag}
@@ -629,6 +620,12 @@ class HTMLRenderer:
                 {delta_html}
             </div>
             """
+            
+        hero_side_html = f"""
+    <div class="hero-side">
+      {kpi_cards}
+    </div>
+        """ if kpi_cards else ""
 
         return f"""
 <section class="hero-section-combined">
@@ -642,10 +639,7 @@ class HTMLRenderer:
       {summary_html}
       <ul class="hero-highlights">{highlight_html}</ul>
       <div class="hero-actions">{actions_html}</div>
-    </div>
-    <div class="hero-side">
-      {kpi_cards}
-    </div>
+    </div>{hero_side_html}
   </div>
 </section>
 """.strip()
@@ -1018,9 +1012,17 @@ class HTMLRenderer:
                 if block.get("type") != "heading":
                     continue
                 level = block.get("level", 2)
-                anchor = block.get("anchor") or chapter.get("anchor")
-                if not anchor:
-                    continue
+                
+                # 为避免多个heading使用相同的anchor导致ID冲突或覆盖，
+                # 优先使用自身anchor，若无或重复则重新生成
+                original_anchor = block.get("anchor") or chapter.get("anchor")
+                anchor = original_anchor
+                counter = 1
+                while not anchor or anchor in label_map:
+                    anchor = f"{original_anchor}-{counter}"
+                    counter += 1
+                    
+                block["anchor"] = anchor
 
                 raw_text = block.get("text", "")
                 clean_title = self._strip_order_prefix(raw_text)
@@ -1055,6 +1057,9 @@ class HTMLRenderer:
                         label = ".".join(parts)
                     display_text = f"{label} {clean_title}".strip()
 
+                # 直接写入 block，避免只依赖 map 造成同 anchor 被覆盖
+                block["display_text"] = display_text
+                
                 label_map[anchor] = {
                     "level": level,
                     "display": display_text,
@@ -2739,26 +2744,16 @@ class HTMLRenderer:
 
     def _render_widget(self, block: Dict[str, Any]) -> str:
         """
-        渲染Chart.js等交互组件的占位容器，并记录配置JSON。
+        渲染ECharts等交互组件的占位容器，并记录配置JSON。
 
         在渲染前进行图表验证和修复：
         1. validate：ChartValidator 检查 block 的 data/props/options 结构；
-        2. repair：若失败，先本地修补（缺 labels/datasets/scale 时兜底），再调用 LLM API；
+        2. repair：若失败，先本地修补，再调用 LLM API；
         3. 失败兜底：写入 _chart_renderable=False 及 _chart_error_reason，输出错误占位而非抛异常。
-
-        参数（对应 IR 层级）：
-        - block.widgetType: "chart.js/bar"/"chart.js/line"/"wordcloud" 等，决定渲染器与校验策略；
-        - block.widgetId: 组件唯一ID，用于canvas/data script绑定；
-        - block.props: 透传到前端 Chart.js options，例如 props.title / props.options.legend；
-        - block.data: {labels, datasets} 等数据；缺失时会尝试从章节级 chapter.data 补齐；
-        - block.dataRef: 外部数据引用，暂作为透传记录。
-
-        返回:
-            str: 含canvas与配置脚本的HTML。
         """
-        # 统一的审查/修复入口，避免后续重复修复
         widget_type = block.get('widgetType', '')
-        is_chart = isinstance(widget_type, str) and widget_type.startswith('chart.js')
+        # 支持 chart.js 或 echarts 前缀的兼容
+        is_chart = isinstance(widget_type, str) and (widget_type.startswith('chart.js') or widget_type.startswith('echarts'))
         is_wordcloud = isinstance(widget_type, str) and 'wordcloud' in widget_type.lower()
         reviewed = bool(block.get("_chart_reviewed"))
         renderable = True
@@ -2781,7 +2776,7 @@ class HTMLRenderer:
 
         # 渲染图表HTML
         self.chart_counter += 1
-        canvas_id = f"chart-{self.chart_counter}"
+        container_id = f"echart-{self.chart_counter}"
         config_id = f"chart-config-{self.chart_counter}"
 
         props, normalized_data = self._prepare_widget_payload(block)
@@ -2807,8 +2802,8 @@ class HTMLRenderer:
         return f"""
         <div class="chart-card{' wordcloud-card' if is_wordcloud else ''}">
           {title_html}
-          <div class="chart-container">
-            <canvas id="{canvas_id}" data-config-id="{config_id}"></canvas>
+          <div class="chart-container" style="position: relative; height: 400px; width: 100%;">
+            <div id="{container_id}" class="echarts-container" data-config-id="{config_id}" style="width: 100%; height: 100%;"></div>
           </div>
           {fallback_html}
         </div>
@@ -6249,74 +6244,53 @@ function debounce(fn, wait) {
 }
 
 function hydrateCharts() {
-  document.querySelectorAll('canvas[data-config-id]').forEach(canvas => {
-    const configScript = document.getElementById(canvas.dataset.configId);
+  document.querySelectorAll('.echarts-container[data-config-id]').forEach(container => {
+    const configScript = document.getElementById(container.dataset.configId);
     if (!configScript) return;
     let payload;
     try {
       payload = JSON.parse(configScript.textContent);
     } catch (err) {
       console.error('Widget JSON 解析失败', err);
-      renderChartFallback(canvas, { widgetId: canvas.dataset.configId }, '配置解析失败');
+      renderChartFallback(container, { widgetId: container.dataset.configId }, '配置解析失败');
       return;
     }
     if (isWordCloudWidget(payload)) {
-      renderWordCloud(canvas, payload);
+      // 词云暂时保留或后续也替换为 echarts-wordcloud，当前可略过或用原有逻辑挂载到canvas
+      renderWordCloud(container, payload);
       return;
     }
-    if (typeof Chart === 'undefined') {
-      renderChartFallback(canvas, payload, 'Chart.js 未加载');
-      return;
-    }
-    const chartTypes = resolveChartTypes(payload);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      renderChartFallback(canvas, payload, 'Canvas 初始化失败');
+    if (typeof echarts === 'undefined') {
+      renderChartFallback(container, payload, 'ECharts 未加载');
       return;
     }
 
-    // 前端数据验证
-    const desiredType = chartTypes[0];
-    const card = canvas.closest('.chart-card') || canvas.parentElement;
-    const colorAdjustments = normalizeDatasetColors(payload, desiredType);
-    if (colorAdjustments.length && card) {
-      card.setAttribute('data-chart-color-fixes', colorAdjustments.join(' | '));
-    }
-    const validation = validateChartData(payload, desiredType);
-    if (!validation.valid) {
-      console.warn('图表数据验证失败:', validation.errors);
-      // 验证失败但仍然尝试渲染，因为可能会降级成功
-    }
-
-    const optionsTemplate = buildChartOptions(payload);
-    let chartInstance = null;
-    let selectedType = null;
-    let lastError;
-    for (const type of chartTypes) {
-      try {
-        chartInstance = instantiateChart(ctx, payload, optionsTemplate, type);
-        selectedType = type;
-        break;
-      } catch (err) {
-        lastError = err;
-        console.error('图表渲染失败', type, err);
+    try {
+      const myChart = echarts.init(container);
+      let options = payload.data;
+      if (!options || !options.series) {
+         options = {
+            title: { text: payload.props?.title || '' },
+            tooltip: {},
+            xAxis: { data: payload.data?.labels || [] },
+            yAxis: {},
+            series: (payload.data?.datasets || []).map(ds => ({
+                name: ds.label,
+                type: payload.widgetType.split('/')[1] || 'bar',
+                data: ds.data
+            }))
+         };
       }
-    }
-    if (chartInstance) {
-      chartRegistry.push(chartInstance);
-      try {
-        applyChartTheme(chartInstance);
-      } catch (err) {
-        console.error('主题同步失败', selectedType || desiredType || payload && payload.widgetType || 'chart', err);
-      }
-      if (selectedType && selectedType !== desiredType) {
-        setChartDegradeNote(card, desiredType, selectedType);
-      } else {
-        clearChartDegradeNote(card);
-      }
-    } else {
-      const reason = lastError && lastError.message ? lastError.message : '';
-      renderChartFallback(canvas, payload, reason);
+      myChart.setOption(options);
+      chartRegistry.push(myChart);
+      
+      // 添加 resize 监听
+      window.addEventListener('resize', () => {
+          myChart.resize();
+      });
+    } catch (err) {
+      console.error('图表渲染失败', err);
+      renderChartFallback(container, payload, err.message);
     }
   });
 }

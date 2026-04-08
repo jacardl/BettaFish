@@ -178,6 +178,8 @@ class State:
     """整个报告的状态"""
     query: str = ""                                                # 原始查询
     report_title: str = ""                                         # 报告标题
+    task_id: str = ""
+    seed_id: str = ""
     paragraphs: List[Paragraph] = field(default_factory=list)     # 段落列表
     final_report: str = ""                                         # 最终报告内容
     is_completed: bool = False                                     # 是否完成

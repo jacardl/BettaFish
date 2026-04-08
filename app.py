@@ -9,6 +9,18 @@ from dotenv import load_dotenv
 # 加载环境变量
 load_dotenv()
 
+# 【修复】时区同步问题
+# 1. 在 Windows 本地运行时，移除可能被错误注入的 UTC 时区
+if os.name == 'nt' and 'TZ' in os.environ:
+    del os.environ['TZ']
+# 2. 在 Docker 容器 (Linux) 中运行时，如果没有映射宿主机时区，默认将其设置为东八区（北京时间）
+elif os.name == 'posix':
+    if 'TZ' not in os.environ or os.environ['TZ'] == 'UTC':
+        os.environ['TZ'] = 'Asia/Shanghai'
+        import time
+        if hasattr(time, 'tzset'):
+            time.tzset()
+
 # 【修复】尽早设置环境变量，确保所有模块都使用无缓冲模式
 os.environ['PYTHONIOENCODING'] = 'utf-8'
 os.environ['PYTHONUTF8'] = '1'
@@ -1251,6 +1263,13 @@ def update_config():
 
     try:
         write_config_values(updates)
+        
+        # 为了保证重载生效，我们需要先清除操作系统的环境变量缓存
+        import os
+        for key in updates.keys():
+            if key in os.environ:
+                del os.environ[key]
+                
         updated_config = read_config_values()
         return jsonify({'success': True, 'config': updated_config})
     except Exception as exc:
