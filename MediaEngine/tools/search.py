@@ -125,7 +125,7 @@ class LocalDatabaseSearch:
             logger.debug(f"查询本地库出错或表不存在: {e}")
             return []
 
-    def _search_local_db(self, query: str, limit: int = 10, start_ts: int = 0, end_ts: int = 0) -> List[WebpageResult]:
+    def _search_local_db(self, query: str, limit: int = 10, start_ts: int = 0, end_ts: int = 0):
         return _run_async(self._search_local_db_async(query, limit, start_ts, end_ts))
 
     async def _search_local_db_async(self, query: str, limit: int = 10, start_ts: int = 0, end_ts: int = 0) -> List[WebpageResult]:
@@ -145,17 +145,17 @@ class LocalDatabaseSearch:
             params["start_ts"] = start_ts
             
         queries = [
-            ("seed", f"SELECT title, description as content, add_ts as time, url FROM daily_news WHERE source_platform = 'seed_document' AND (title LIKE :topic OR description LIKE :topic){time_filter.format(time_col='add_ts')} ORDER BY add_ts DESC LIMIT :limit"),
-            ("xhs", f"SELECT title, \"desc\" as content, time, note_url as url FROM xhs_note WHERE (title LIKE :topic OR \"desc\" LIKE :topic){time_filter.format(time_col='time')} ORDER BY time DESC LIMIT :limit"),
-            ("bilibili", f"SELECT title, \"desc\" as content, create_time as time, video_url as url FROM bilibili_video WHERE (title LIKE :topic OR \"desc\" LIKE :topic){time_filter.format(time_col='create_time')} ORDER BY create_time DESC LIMIT :limit"),
-            ("douyin", f"SELECT title, \"desc\" as content, create_time as time, aweme_url as url FROM douyin_aweme WHERE (title LIKE :topic OR \"desc\" LIKE :topic){time_filter.format(time_col='create_time')} ORDER BY create_time DESC LIMIT :limit"),
-            ("weibo", f"SELECT content as title, content as content, create_time as time, note_url as url FROM weibo_note WHERE (content LIKE :topic){time_filter.format(time_col='create_time')} ORDER BY create_time DESC LIMIT :limit"),
-            ("zhihu", f"SELECT title, content_text as content, created_time as time, content_url as url FROM zhihu_content WHERE (title LIKE :topic OR content_text LIKE :topic){time_filter.format(time_col='created_time')} ORDER BY created_time DESC LIMIT :limit"),
-            ("tieba", f"SELECT title, \"desc\" as content, add_ts as time, note_url as url FROM tieba_note WHERE (title LIKE :topic OR \"desc\" LIKE :topic){time_filter.format(time_col='add_ts')} ORDER BY add_ts DESC LIMIT :limit"),
-            ("daily_news", f"SELECT title, description as content, add_ts as time, url FROM daily_news WHERE (title LIKE :topic OR description LIKE :topic){time_filter.format(time_col='add_ts')} ORDER BY add_ts DESC LIMIT :limit")
+            ("seed", f"SELECT title, description as content, add_ts as time, url, extra_info FROM daily_news WHERE source_platform = 'seed_document' AND (title LIKE :topic OR description LIKE :topic){time_filter.format(time_col='add_ts')} ORDER BY add_ts DESC LIMIT :limit"),
+            ("xhs", f"SELECT title, \"desc\" as content, time, note_url as url, extra_info FROM xhs_note WHERE (title LIKE :topic OR \"desc\" LIKE :topic){time_filter.format(time_col='time')} ORDER BY time DESC LIMIT :limit"),
+            ("bilibili", f"SELECT title, \"desc\" as content, create_time as time, video_url as url, extra_info FROM bilibili_video WHERE (title LIKE :topic OR \"desc\" LIKE :topic){time_filter.format(time_col='create_time')} ORDER BY create_time DESC LIMIT :limit"),
+            ("douyin", f"SELECT title, \"desc\" as content, create_time as time, aweme_url as url, extra_info FROM douyin_aweme WHERE (title LIKE :topic OR \"desc\" LIKE :topic){time_filter.format(time_col='create_time')} ORDER BY create_time DESC LIMIT :limit"),
+            ("weibo", f"SELECT '' as title, content, create_time as time, note_url as url, extra_info FROM weibo_note WHERE content LIKE :topic{time_filter.format(time_col='create_time')} ORDER BY create_time DESC LIMIT :limit"),
+            ("zhihu", f"SELECT title, content_text as content, created_time as time, url, extra_info FROM zhihu_content WHERE (title LIKE :topic OR content_text LIKE :topic){time_filter.format(time_col='created_time')} ORDER BY created_time DESC LIMIT :limit"),
+            ("tieba", f"SELECT title, \"desc\" as content, add_ts as time, note_url as url, extra_info FROM tieba_note WHERE (title LIKE :topic OR \"desc\" LIKE :topic){time_filter.format(time_col='add_ts')} ORDER BY add_ts DESC LIMIT :limit")
         ]
         
         results = []
+        images_results = []
         try:
             tasks = [fetch_all(sql, params) for _, sql in queries]
             all_rows = await asyncio.gather(*tasks, return_exceptions=True)
@@ -169,6 +169,27 @@ class LocalDatabaseSearch:
                     content = r.get('content', '')
                     time_val = r.get('time')
                     url = r.get('url')
+                    extra_info_str = r.get('extra_info', '')
+                    
+                    extra_data = {}
+                    if extra_info_str:
+                        try:
+                            import json
+                            extra_data = json.loads(extra_info_str)
+                            # 提取图片并添加到 images_results 中
+                            if 'images' in extra_data and isinstance(extra_data['images'], list):
+                                for img_url in extra_data['images']:
+                                    if img_url:
+                                        images_results.append(ImageResult(
+                                            name=f"[{platform.upper()}] 图片",
+                                            content_url=img_url,
+                                            host_page_url=url
+                                        ))
+                            # 也尝试提取一些其他格式的媒体
+                            if 'video_url' in extra_data and extra_data['video_url']:
+                                content += f" [视频链接: {extra_data['video_url']}]"
+                        except Exception:
+                            pass
                     
                     results.append(WebpageResult(
                         name=f"[{platform.upper()}] {title}" if title else f"[{platform.upper()}] 网友讨论",
@@ -182,7 +203,7 @@ class LocalDatabaseSearch:
         
         # 按照时间降序排序，并截取前 limit 个
         results.sort(key=lambda x: x.date_last_crawled or "", reverse=True)
-        return results[:limit]
+        return results[:limit], images_results
 
 
 class BochaMultimodalSearch(LocalDatabaseSearch):
@@ -194,30 +215,30 @@ class BochaMultimodalSearch(LocalDatabaseSearch):
 
     def comprehensive_search(self, query: str, max_results: int = 10) -> BochaResponse:
         logger.info(f"--- TOOL: 全面综合搜索 (本地DB) (query: {query}) ---")
-        results = self._search_local_db(query, limit=max_results)
-        return BochaResponse(query=query, webpages=results, answer="（本地数据库检索，不提供总结）")
+        results, images = self._search_local_db(query, limit=max_results)
+        return BochaResponse(query=query, webpages=results, images=images, answer="（本地数据库检索，不提供总结）")
 
     def web_search_only(self, query: str, max_results: int = 15) -> BochaResponse:
         logger.info(f"--- TOOL: 纯网页搜索 (本地DB) (query: {query}) ---")
-        results = self._search_local_db(query, limit=max_results)
+        results, _ = self._search_local_db(query, limit=max_results)
         return BochaResponse(query=query, webpages=results)
 
     def search_for_structured_data(self, query: str) -> BochaResponse:
         logger.info(f"--- TOOL: 结构化数据查询 (本地DB) (query: {query}) ---")
-        results = self._search_local_db(query, limit=5)
+        results, _ = self._search_local_db(query, limit=5)
         return BochaResponse(query=query, webpages=results)
 
     def search_last_24_hours(self, query: str) -> BochaResponse:
         logger.info(f"--- TOOL: 搜索24小时内信息 (本地DB) (query: {query}) ---")
         start_ts = int((datetime.datetime.now() - datetime.timedelta(days=1)).timestamp() * 1000)
-        results = self._search_local_db(query, limit=15, start_ts=start_ts)
-        return BochaResponse(query=query, webpages=results)
+        results, images = self._search_local_db(query, limit=15, start_ts=start_ts)
+        return BochaResponse(query=query, webpages=results, images=images)
 
     def search_last_week(self, query: str) -> BochaResponse:
         logger.info(f"--- TOOL: 搜索本周信息 (本地DB) (query: {query}) ---")
         start_ts = int((datetime.datetime.now() - datetime.timedelta(weeks=1)).timestamp() * 1000)
-        results = self._search_local_db(query, limit=15, start_ts=start_ts)
-        return BochaResponse(query=query, webpages=results)
+        results, images = self._search_local_db(query, limit=15, start_ts=start_ts)
+        return BochaResponse(query=query, webpages=results, images=images)
 
 
 class AnspireAISearch(LocalDatabaseSearch):
@@ -229,19 +250,19 @@ class AnspireAISearch(LocalDatabaseSearch):
 
     def comprehensive_search(self, query: str, max_results: int = 10) -> AnspireResponse:
         logger.info(f"--- TOOL: 综合搜索 (本地DB) (query: {query}) ---")
-        results = self._search_local_db(query, limit=max_results)
+        results, _ = self._search_local_db(query, limit=max_results)
         return AnspireResponse(query=query, webpages=results)
 
     def search_last_24_hours(self, query: str, max_results: int = 10) -> AnspireResponse:
         logger.info(f"--- TOOL: 搜索24小时内信息 (本地DB) (query: {query}) ---")
         start_ts = int((datetime.datetime.now() - datetime.timedelta(days=1)).timestamp() * 1000)
-        results = self._search_local_db(query, limit=max_results, start_ts=start_ts)
+        results, _ = self._search_local_db(query, limit=max_results, start_ts=start_ts)
         return AnspireResponse(query=query, webpages=results)
 
     def search_last_week(self, query: str, max_results: int = 10) -> AnspireResponse:
         logger.info(f"--- TOOL: 搜索本周信息 (本地DB) (query: {query}) ---")
         start_ts = int((datetime.datetime.now() - datetime.timedelta(weeks=1)).timestamp() * 1000)
-        results = self._search_local_db(query, limit=max_results, start_ts=start_ts)
+        results, _ = self._search_local_db(query, limit=max_results, start_ts=start_ts)
         return AnspireResponse(query=query, webpages=results)
 
 # --- 3. 测试与使用示例 ---

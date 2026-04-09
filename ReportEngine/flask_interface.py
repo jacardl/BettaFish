@@ -834,6 +834,14 @@ def analyze_seed():
         seed_path = seed_dir / f"{seed_id}.json"
         seed_path.write_text(json.dumps(seed_data, ensure_ascii=False), encoding='utf-8')
 
+        # 触发 seed 入库，将其写入本地 daily_news 表并记录 crawler 日志
+        try:
+            from InsightEngine.utils.data_ingestion import ingest_seed_data
+            import threading
+            threading.Thread(target=ingest_seed_data, args=(seed_id,), daemon=True).start()
+        except Exception as e:
+            logger.error(f"异步触发 seed 入库失败: {e}")
+
         return jsonify({
             'success': True,
             'optimized_keywords': response.optimized_keywords,

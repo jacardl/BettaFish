@@ -166,13 +166,13 @@ class MediaCrawlerDB:
         
         queries = [
             ("seed", "SELECT * FROM daily_news WHERE source_platform = 'seed_document' AND (title LIKE :topic OR description LIKE :topic) ORDER BY add_ts DESC LIMIT :limit"),
-            ("xhs", "SELECT * FROM xhs_note WHERE title LIKE :topic OR \"desc\" LIKE :topic ORDER BY time DESC LIMIT :limit"),
-            ("bilibili", "SELECT * FROM bilibili_video WHERE title LIKE :topic OR \"desc\" LIKE :topic ORDER BY create_time DESC LIMIT :limit"),
-            ("douyin", "SELECT * FROM douyin_aweme WHERE title LIKE :topic OR \"desc\" LIKE :topic ORDER BY create_time DESC LIMIT :limit"),
-            ("weibo", "SELECT * FROM weibo_note WHERE content LIKE :topic ORDER BY create_time DESC LIMIT :limit"),
-            ("zhihu", "SELECT * FROM zhihu_content WHERE title LIKE :topic OR content_text LIKE :topic ORDER BY created_time DESC LIMIT :limit"),
-            ("kuaishou", "SELECT * FROM kuaishou_video WHERE title LIKE :topic OR \"desc\" LIKE :topic ORDER BY create_time DESC LIMIT :limit"),
-            ("tieba", "SELECT * FROM tieba_note WHERE title LIKE :topic OR \"desc\" LIKE :topic ORDER BY add_ts DESC LIMIT :limit")
+            ("xhs", "SELECT *, extra_info FROM xhs_note WHERE title LIKE :topic OR \"desc\" LIKE :topic ORDER BY time DESC LIMIT :limit"),
+            ("bilibili", "SELECT *, extra_info FROM bilibili_video WHERE title LIKE :topic OR \"desc\" LIKE :topic ORDER BY create_time DESC LIMIT :limit"),
+            ("douyin", "SELECT *, extra_info FROM douyin_aweme WHERE title LIKE :topic OR \"desc\" LIKE :topic ORDER BY create_time DESC LIMIT :limit"),
+            ("weibo", "SELECT *, extra_info FROM weibo_note WHERE content LIKE :topic ORDER BY create_time DESC LIMIT :limit"),
+            ("zhihu", "SELECT *, extra_info FROM zhihu_content WHERE title LIKE :topic OR content_text LIKE :topic ORDER BY created_time DESC LIMIT :limit"),
+            ("kuaishou", "SELECT *, extra_info FROM kuaishou_video WHERE title LIKE :topic OR \"desc\" LIKE :topic ORDER BY create_time DESC LIMIT :limit"),
+            ("tieba", "SELECT *, extra_info FROM tieba_note WHERE title LIKE :topic OR \"desc\" LIKE :topic ORDER BY add_ts DESC LIMIT :limit")
         ]
         
         all_results = []
@@ -183,6 +183,20 @@ class MediaCrawlerDB:
                 content = r.get('desc', '') or r.get('content_text', '') or r.get('description', '') or r.get('content', '')
                 time_val = r.get('time') or r.get('created_time') or r.get('add_ts')
                 url = r.get('note_url') or r.get('video_url') or r.get('content_url') or r.get('url')
+                
+                # 提取额外格式数据
+                extra_info_str = r.get('extra_info', '')
+                if extra_info_str:
+                    try:
+                        import json
+                        extra_data = json.loads(extra_info_str)
+                        if 'images' in extra_data and extra_data['images']:
+                            content += f" [包含 {len(extra_data['images'])} 张图片]"
+                        if 'video_url' in extra_data and extra_data['video_url']:
+                            content += f" [包含视频]"
+                        # 可以提取更多的点赞等互动数据
+                    except Exception:
+                        pass
                 
                 all_results.append(QueryResult(
                     platform=platform,
@@ -213,11 +227,11 @@ class MediaCrawlerDB:
         params = {"topic": topic_like, "start_ts": start_ts, "end_ts": end_ts, "limit": limit_per_table}
         
         queries = [
-            ("xhs", "SELECT * FROM xhs_note WHERE (title LIKE :topic OR \"desc\" LIKE :topic) AND time >= :start_ts AND time <= :end_ts LIMIT :limit"),
-            ("bilibili", "SELECT * FROM bilibili_video WHERE (title LIKE :topic OR \"desc\" LIKE :topic) AND create_time >= :start_ts AND create_time <= :end_ts LIMIT :limit"),
-            ("douyin", "SELECT * FROM douyin_aweme WHERE (title LIKE :topic OR \"desc\" LIKE :topic) AND create_time >= :start_ts AND create_time <= :end_ts LIMIT :limit"),
-            ("weibo", "SELECT * FROM weibo_note WHERE content LIKE :topic AND create_time >= :start_ts AND create_time <= :end_ts LIMIT :limit"),
-            ("tieba", "SELECT * FROM tieba_note WHERE (title LIKE :topic OR \"desc\" LIKE :topic) AND add_ts >= :start_ts AND add_ts <= :end_ts LIMIT :limit")
+            ("xhs", "SELECT *, extra_info FROM xhs_note WHERE (title LIKE :topic OR \"desc\" LIKE :topic) AND time >= :start_ts AND time <= :end_ts LIMIT :limit"),
+            ("bilibili", "SELECT *, extra_info FROM bilibili_video WHERE (title LIKE :topic OR \"desc\" LIKE :topic) AND create_time >= :start_ts AND create_time <= :end_ts LIMIT :limit"),
+            ("douyin", "SELECT *, extra_info FROM douyin_aweme WHERE (title LIKE :topic OR \"desc\" LIKE :topic) AND create_time >= :start_ts AND create_time <= :end_ts LIMIT :limit"),
+            ("weibo", "SELECT *, extra_info FROM weibo_note WHERE content LIKE :topic AND create_time >= :start_ts AND create_time <= :end_ts LIMIT :limit"),
+            ("tieba", "SELECT *, extra_info FROM tieba_note WHERE (title LIKE :topic OR \"desc\" LIKE :topic) AND add_ts >= :start_ts AND add_ts <= :end_ts LIMIT :limit")
         ]
         
         all_results = []
@@ -228,6 +242,19 @@ class MediaCrawlerDB:
                 content = r.get('desc', '') or r.get('content_text', '')
                 time_val = r.get('time') or r.get('created_time') or r.get('add_ts')
                 
+                # 提取额外格式数据
+                extra_info_str = r.get('extra_info', '')
+                if extra_info_str:
+                    try:
+                        import json
+                        extra_data = json.loads(extra_info_str)
+                        if 'images' in extra_data and extra_data['images']:
+                            content += f" [包含 {len(extra_data['images'])} 张图片]"
+                        if 'video_url' in extra_data and extra_data['video_url']:
+                            content += f" [包含视频]"
+                    except Exception:
+                        pass
+
                 all_results.append(QueryResult(
                     platform=platform,
                     content_type="news",
