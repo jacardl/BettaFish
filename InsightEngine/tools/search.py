@@ -62,71 +62,60 @@ class DBResponse:
     error_message: Optional[str] = None
 
 # --- 2. 核心客户端与专用工具集 ---
+import concurrent.futures
+from InsightEngine.utils.db import fetch_all
+
+def _run_async(coro):
+    """安全的异步执行包装器，兼容多线程与事件循环环境"""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+        
+    if loop and loop.is_running():
+        with concurrent.futures.ThreadPoolExecutor(1) as pool:
+            return pool.submit(asyncio.run, coro).result()
+    else:
+        return asyncio.run(coro)
 
 class MediaCrawlerDB:
-    """升级为基于 web-access 实时联网查询的舆情检索工具"""
-    
-    ANSPIRE_BASE_URL = os.getenv("ANSPIRE_BASE_URL", "https://plugin.anspire.cn/api/ntsearch/search")
-    ANSPIRE_PRO_BASE_URL = os.getenv("ANSPIRE_PRO_BASE_URL", "https://plugin.anspire.cn/api/ntsearch/prosearch")
+    """本地数据库舆情检索工具"""
     
     def __init__(self):
-        """
-        初始化实时网络爬虫客户端。
-        """
-        self.api_key = os.getenv("ANSPIRE_API_KEY")
-        if not self.api_key:
-            # 兼容旧配置项
-            self.api_key = getattr(settings, "ANSPIRE_API_KEY", None)
-            
-        if not self.api_key:
-            logger.warning("未配置 ANSPIRE_API_KEY，实时搜索功能可能受限")
-        
-        self._headers = {
-            'Authorization': f'Bearer {self.api_key}',
-            'Content-Type': 'application/json',
-            'Connection': 'keep-alive',
-            'Accept': '*/*'
-        }
-        
-        # 读取是否使用 Pro 的配置（默认 True）
-        use_pro_env = os.getenv("ANSPIRE_USE_PRO", "True").lower()
-        self.use_pro = use_pro_env in ("true", "1", "yes", "t")
-        
-    def _execute_realtime_search(self, query: str, insite: str = "", top_k: int = 10, from_time: str = "", to_time: str = "") -> List[Dict[str, Any]]:
-        """执行实时网页搜索"""
-        payload = {
-            "query": query,
-            "top_k": top_k,
-            "Insite": insite,
-            "FromTime": from_time,
-            "ToTime": to_time
-        }
-        
-        if self.use_pro:
-            payload["detail"] = True
-            target_url = self.ANSPIRE_PRO_BASE_URL
-        else:
-            target_url = self.ANSPIRE_BASE_URL
-            
-        try:
-            response = requests.get(target_url, headers=self._headers, params=payload, timeout=30)
-            response.raise_for_status()
-            data = response.json()
-            return data.get("results", [])
-        except Exception as e:
-            logger.error(f"实时搜索网络错误: {e}")
-            return []
+        """初始化，无需外部API"""
+        pass
 
     @staticmethod
-    def _to_datetime(ts: Any) -> Optional[datetime]:
+    def _parse_timestamp(ts: Any) -> Optional[datetime]:
         if not ts: return None
         try:
-            if isinstance(ts, datetime): return ts
+            if isinstance(ts, datetime):
+                return ts
+            if isinstance(ts, str) and ts.isdigit():
+                ts = int(ts)
+            if isinstance(ts, int):
+                if ts > 1e11:  # 13位毫秒时间戳
+                    return datetime.fromtimestamp(ts / 1000)
+                return datetime.fromtimestamp(ts)
             if isinstance(ts, str):
-                # 尝试解析类似于 2026-04-02 12:11:19 或者 ISO 格式
                 return datetime.fromisoformat(ts.split('+')[0].strip().replace(' ', 'T'))
-        except (ValueError, TypeError): return None
+        except Exception:
+            return None
         return None
+        
+    def _safe_query(self, sql: str, params: dict) -> List[dict]:
+        """安全查询单表，如果表不存在则静默忽略"""
+        try:
+            res = _run_async(fetch_all(sql, params))
+            import InsightEngine.utils.db as db_utils
+            db_utils._engine = None  # Prevent event loop reuse issues
+            return res
+        except Exception as e:
+            # 捕获表不存在等异常，不影响其他表查询
+            logger.debug(f"查询跳过 (可能表不存在): {e}")
+            import InsightEngine.utils.db as db_utils
+            db_utils._engine = None
+            return []
 
     def search_hot_content(
         self,
@@ -134,105 +123,155 @@ class MediaCrawlerDB:
         limit: int = 50
     ) -> DBResponse:
         """
-        【工具】查找热点内容: 实时获取全网热点信息。
+        【工具】查找热点内容: 提取数据库中 MindSpider 抓取的每日热点。
         """
         params_for_log = {'time_period': time_period, 'limit': limit}
-        logger.info(f"--- TOOL: 查找实时热点内容 (params: {params_for_log}) ---")
+        logger.info(f"--- TOOL: 查找本地热点内容 (params: {params_for_log}) ---")
         
         now = datetime.now()
-        start_time = now - timedelta(days={'24h': 1, 'week': 7}.get(time_period, 365))
+        days = {'24h': 1, 'week': 7, 'year': 365}.get(time_period, 7)
+        start_ts = int((now - timedelta(days=days)).timestamp() * 1000)
         
-        raw_results = self._execute_realtime_search(
-            query="今日热榜 全网热点",
-            top_k=limit,
-            from_time=start_time.strftime("%Y-%m-%d %H:%M:%S"),
-            to_time=now.strftime("%Y-%m-%d %H:%M:%S")
-        )
-        
-        formatted_results = []
-        for r in raw_results:
-            formatted_results.append(QueryResult(
-                platform="web",
-                content_type="hot_news",
-                title_or_content=f"{r.get('title', '')} - {r.get('content', '')}",
-                url=r.get('url'),
-                publish_time=self._to_datetime(r.get('date')),
-                hotness_score=float(r.get('score', 0)) * 100,
-                source_table="realtime_search"
-            ))
-            
-        return DBResponse("search_hot_content", params_for_log, results=formatted_results, results_count=len(formatted_results))    
-
-    def search_topic_globally(self, topic: str, limit_per_table: int = 10) -> DBResponse:
+        sql = """
+            SELECT source_platform as platform, title, description as content, url, add_ts as publish_time
+            FROM daily_news
+            WHERE add_ts >= :start_ts
+            ORDER BY rank_position ASC, add_ts DESC
+            LIMIT :limit
         """
-        【工具】全局话题搜索: 实时在全网搜索指定话题。
-        """
-        params_for_log = {'topic': topic, 'limit_per_table': limit_per_table}
-        logger.info(f"--- TOOL: 全网话题搜索 (params: {params_for_log}) ---")
-        
-        raw_results = self._execute_realtime_search(query=topic, top_k=limit_per_table * 3)
-        
-        all_results = []
-        for r in raw_results:
-            all_results.append(QueryResult(
-                platform="web",
-                content_type="news",
-                title_or_content=f"{r.get('title', '')} - {r.get('content', '')}",
-                url=r.get('url'),
-                publish_time=self._to_datetime(r.get('date')),
-                source_keyword=topic,
-                source_table="realtime_search"
-            ))
-            
-        return DBResponse("search_topic_globally", params_for_log, results=all_results, results_count=len(all_results))
-
-    def search_topic_by_date(self, topic: str, start_date: str, end_date: str, limit_per_table: int = 10) -> DBResponse:
-        """
-        【工具】按日期搜索话题: 实时获取在明确的历史时间段内的话题内容。
-        """
-        params_for_log = {'topic': topic, 'start_date': start_date, 'end_date': end_date, 'limit_per_table': limit_per_table}
-        logger.info(f"--- TOOL: 按日期全网搜索话题 (params: {params_for_log}) ---")
-        
-        from_time = f"{start_date} 00:00:00"
-        to_time = f"{end_date} 23:59:59"
-        
-        raw_results = self._execute_realtime_search(query=topic, top_k=limit_per_table * 3, from_time=from_time, to_time=to_time)
-        
-        all_results = []
-        for r in raw_results:
-            all_results.append(QueryResult(
-                platform="web",
-                content_type="news",
-                title_or_content=f"{r.get('title', '')} - {r.get('content', '')}",
-                url=r.get('url'),
-                publish_time=self._to_datetime(r.get('date')),
-                source_keyword=topic,
-                source_table="realtime_search"
-            ))
-            
-        return DBResponse("search_topic_by_date", params_for_log, results=all_results, results_count=len(all_results))
-        
-    def get_comments_for_topic(self, topic: str, limit: int = 50) -> DBResponse:
-        """
-        【工具】获取话题讨论: 实时搜索网民对某话题的讨论和评论。
-        """
-        params_for_log = {'topic': topic, 'limit': limit}
-        logger.info(f"--- TOOL: 获取话题讨论 (params: {params_for_log}) ---")
-        
-        # 针对评论的特定搜索
-        raw_results = self._execute_realtime_search(query=f"{topic} 评论 观点 网友说", top_k=limit)
+        raw_results = self._safe_query(sql, {"start_ts": start_ts, "limit": limit})
         
         formatted = []
         for r in raw_results:
             formatted.append(QueryResult(
-                platform="web",
-                content_type="comment",
-                title_or_content=r.get('content', ''),
-                author_nickname="网友",
-                publish_time=self._to_datetime(r.get('date')),
-                source_table="realtime_search"
+                platform=r.get('platform', 'web'),
+                content_type="hot_news",
+                title_or_content=f"{r.get('title', '')} - {r.get('content', '')}",
+                url=r.get('url'),
+                publish_time=self._parse_timestamp(r.get('publish_time')),
+                source_table="daily_news"
             ))
             
+        return DBResponse("search_hot_content", params_for_log, results=formatted, results_count=len(formatted))
+
+    def search_topic_globally(self, topic: str, limit_per_table: int = 10) -> DBResponse:
+        """
+        【工具】全局话题搜索: 在本地多平台数据表中模糊检索话题。
+        """
+        params_for_log = {'topic': topic, 'limit_per_table': limit_per_table}
+        logger.info(f"--- TOOL: 本地全库话题搜索 (params: {params_for_log}) ---")
+        
+        topic_like = f"%{topic}%"
+        params = {"topic": topic_like, "limit": limit_per_table}
+        
+        queries = [
+            ("seed", "SELECT * FROM daily_news WHERE source_platform = 'seed_document' AND (title LIKE :topic OR description LIKE :topic) ORDER BY add_ts DESC LIMIT :limit"),
+            ("xhs", "SELECT * FROM xhs_note WHERE title LIKE :topic OR \"desc\" LIKE :topic ORDER BY time DESC LIMIT :limit"),
+            ("bilibili", "SELECT * FROM bilibili_video WHERE title LIKE :topic OR \"desc\" LIKE :topic ORDER BY create_time DESC LIMIT :limit"),
+            ("douyin", "SELECT * FROM douyin_aweme WHERE title LIKE :topic OR \"desc\" LIKE :topic ORDER BY create_time DESC LIMIT :limit"),
+            ("weibo", "SELECT * FROM weibo_note WHERE content LIKE :topic ORDER BY create_time DESC LIMIT :limit"),
+            ("zhihu", "SELECT * FROM zhihu_content WHERE title LIKE :topic OR content_text LIKE :topic ORDER BY created_time DESC LIMIT :limit"),
+            ("kuaishou", "SELECT * FROM kuaishou_video WHERE title LIKE :topic OR \"desc\" LIKE :topic ORDER BY create_time DESC LIMIT :limit"),
+            ("tieba", "SELECT * FROM tieba_note WHERE title LIKE :topic OR \"desc\" LIKE :topic ORDER BY add_ts DESC LIMIT :limit")
+        ]
+        
+        all_results = []
+        for platform, sql in queries:
+            rows = self._safe_query(sql, params)
+            for r in rows:
+                title = r.get('title', '')
+                content = r.get('desc', '') or r.get('content_text', '') or r.get('description', '') or r.get('content', '')
+                time_val = r.get('time') or r.get('created_time') or r.get('add_ts')
+                url = r.get('note_url') or r.get('video_url') or r.get('content_url') or r.get('url')
+                
+                all_results.append(QueryResult(
+                    platform=platform,
+                    content_type="news",
+                    title_or_content=f"{title} - {content}",
+                    url=url,
+                    publish_time=self._parse_timestamp(time_val),
+                    source_keyword=topic,
+                    source_table=f"{platform}_table"
+                ))
+                
+        return DBResponse("search_topic_globally", params_for_log, results=all_results, results_count=len(all_results))
+
+    def search_topic_by_date(self, topic: str, start_date: str, end_date: str, limit_per_table: int = 10) -> DBResponse:
+        """
+        【工具】按日期搜索话题: 在限定的时间段内查询本地库。
+        """
+        params_for_log = {'topic': topic, 'start_date': start_date, 'end_date': end_date, 'limit_per_table': limit_per_table}
+        logger.info(f"--- TOOL: 本地按日期搜索话题 (params: {params_for_log}) ---")
+        
+        try:
+            start_ts = int(datetime.strptime(start_date, "%Y-%m-%d").timestamp() * 1000)
+            end_ts = int((datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)).timestamp() * 1000)
+        except Exception:
+            return DBResponse("search_topic_by_date", params_for_log, error_message="日期格式错误，需为 YYYY-MM-DD")
+            
+        topic_like = f"%{topic}%"
+        params = {"topic": topic_like, "start_ts": start_ts, "end_ts": end_ts, "limit": limit_per_table}
+        
+        queries = [
+            ("xhs", "SELECT * FROM xhs_note WHERE (title LIKE :topic OR \"desc\" LIKE :topic) AND time >= :start_ts AND time <= :end_ts LIMIT :limit"),
+            ("bilibili", "SELECT * FROM bilibili_video WHERE (title LIKE :topic OR \"desc\" LIKE :topic) AND create_time >= :start_ts AND create_time <= :end_ts LIMIT :limit"),
+            ("douyin", "SELECT * FROM douyin_aweme WHERE (title LIKE :topic OR \"desc\" LIKE :topic) AND create_time >= :start_ts AND create_time <= :end_ts LIMIT :limit"),
+            ("weibo", "SELECT * FROM weibo_note WHERE content LIKE :topic AND create_time >= :start_ts AND create_time <= :end_ts LIMIT :limit"),
+            ("tieba", "SELECT * FROM tieba_note WHERE (title LIKE :topic OR \"desc\" LIKE :topic) AND add_ts >= :start_ts AND add_ts <= :end_ts LIMIT :limit")
+        ]
+        
+        all_results = []
+        for platform, sql in queries:
+            rows = self._safe_query(sql, params)
+            for r in rows:
+                title = r.get('title', '')
+                content = r.get('desc', '') or r.get('content_text', '')
+                time_val = r.get('time') or r.get('created_time') or r.get('add_ts')
+                
+                all_results.append(QueryResult(
+                    platform=platform,
+                    content_type="news",
+                    title_or_content=f"{title} - {content}",
+                    url=r.get('note_url') or r.get('video_url') or r.get('content_url'),
+                    publish_time=self._parse_timestamp(time_val),
+                    source_keyword=topic,
+                    source_table=f"{platform}_table"
+                ))
+                
+        return DBResponse("search_topic_by_date", params_for_log, results=all_results, results_count=len(all_results))
+        
+    def get_comments_for_topic(self, topic: str, limit: int = 50) -> DBResponse:
+        """
+        【工具】获取话题讨论: 直接从本地各平台的评论表中挖掘网民原话。
+        """
+        params_for_log = {'topic': topic, 'limit': limit}
+        logger.info(f"--- TOOL: 本地挖掘话题讨论 (params: {params_for_log}) ---")
+        
+        topic_like = f"%{topic}%"
+        params = {"topic": topic_like, "limit": limit}
+        
+        comment_queries = [
+            ("xhs", "SELECT content, create_time as time, nickname FROM xhs_note_comment WHERE content LIKE :topic LIMIT :limit"),
+            ("douyin", "SELECT content, create_time as time, nickname FROM douyin_aweme_comment WHERE content LIKE :topic LIMIT :limit"),
+            ("bilibili", "SELECT content, create_time as time, nickname FROM bilibili_video_comment WHERE content LIKE :topic LIMIT :limit"),
+            ("weibo", "SELECT content, create_time as time, nickname FROM weibo_note_comment WHERE content LIKE :topic LIMIT :limit"),
+            ("zhihu", "SELECT content, publish_time as time, user_nickname as nickname FROM zhihu_comment WHERE content LIKE :topic LIMIT :limit"),
+            ("tieba", "SELECT content, publish_time as time, user_nickname as nickname FROM tieba_comment WHERE content LIKE :topic LIMIT :limit"),
+        ]
+        
+        formatted = []
+        for platform, sql in comment_queries:
+            rows = self._safe_query(sql, params)
+            for r in rows:
+                formatted.append(QueryResult(
+                    platform=platform,
+                    content_type="comment",
+                    title_or_content=r.get('content', ''),
+                    author_nickname=r.get('nickname', '网友'),
+                    publish_time=self._parse_timestamp(r.get('time')),
+                    source_table=f"{platform}_comment"
+                ))
+                
         return DBResponse("get_comments_for_topic", params_for_log, results=formatted, results_count=len(formatted))
 
     def search_topic_on_platform(
@@ -244,43 +283,72 @@ class MediaCrawlerDB:
         limit: int = 20
     ) -> DBResponse:
         """
-        【工具】平台定向搜索: 实时在指定的单个社交媒体平台上搜索特定话题。
+        【工具】平台定向搜索: 精确查询本地某单一平台的数据表。
         """
         params_for_log = {'platform': platform, 'topic': topic, 'start_date': start_date, 'end_date': end_date, 'limit': limit}
-        logger.info(f"--- TOOL: 实时平台定向搜索 (params: {params_for_log}) ---")
+        logger.info(f"--- TOOL: 本地定向平台搜索 (params: {params_for_log}) ---")
 
-        domain_mapping = {
-            'bilibili': 'bilibili.com',
-            'weibo': 'weibo.com',
-            'douyin': 'douyin.com',
-            'kuaishou': 'kuaishou.com',
-            'xhs': 'xiaohongshu.com',
-            'zhihu': 'zhihu.com',
-            'tieba': 'tieba.baidu.com'
+        topic_like = f"%{topic}%"
+        params = {"topic": topic_like, "limit": limit}
+        
+        table_map = {
+            'xhs': ('xhs_note', 'title', 'desc', 'time'),
+            'bilibili': ('bilibili_video', 'title', 'desc', 'create_time'),
+            'douyin': ('douyin_aweme', 'title', 'desc', 'create_time'),
+            'weibo': ('weibo_note', 'content', 'content', 'create_time'), # 微博通常用content代替title和desc
+            'kuaishou': ('kuaishou_video', 'title', 'desc', 'create_time'),
+            'zhihu': ('zhihu_content', 'title', 'content_text', 'created_time'),
+            'tieba': ('tieba_note', 'title', 'desc', 'add_ts')
         }
         
-        if platform not in domain_mapping:
+        if platform not in table_map:
             return DBResponse("search_topic_on_platform", params_for_log, error_message=f"不支持的平台: {platform}")
 
-        insite = domain_mapping[platform]
-        from_time = f"{start_date} 00:00:00" if start_date else ""
-        to_time = f"{end_date} 23:59:59" if end_date else ""
-
-        raw_results = self._execute_realtime_search(query=topic, insite=insite, top_k=limit, from_time=from_time, to_time=to_time)
+        tb_name, col_title, col_desc, col_time = table_map[platform]
+        
+        # 构建时间过滤
+        time_filter = ""
+        if start_date and end_date:
+            try:
+                start_ts = int(datetime.strptime(start_date, "%Y-%m-%d").timestamp() * 1000)
+                end_ts = int((datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)).timestamp() * 1000)
+                time_filter = f" AND {col_time} >= :start_ts AND {col_time} <= :end_ts"
+                params["start_ts"] = start_ts
+                params["end_ts"] = end_ts
+            except Exception:
+                pass
+                
+        sql = f"SELECT * FROM {tb_name} WHERE ({col_title} LIKE :topic OR \"{col_desc}\" LIKE :topic) {time_filter} ORDER BY {col_time} DESC LIMIT :limit"
+        
+        rows = self._safe_query(sql, params)
         
         all_results = []
-        for r in raw_results:
+        for r in rows:
+            title = r.get(col_title, '') if col_title != 'desc' else ''
+            content = r.get(col_desc, '')
+            
             all_results.append(QueryResult(
                 platform=platform,
-                content_type="post",
-                title_or_content=f"{r.get('title', '')} - {r.get('content', '')}",
-                url=r.get('url'),
-                publish_time=self._to_datetime(r.get('date')),
+                content_type="news",
+                title_or_content=f"{title} - {content}",
+                url=r.get('note_url') or r.get('video_url') or r.get('content_url'),
+                publish_time=self._parse_timestamp(r.get(col_time)),
                 source_keyword=topic,
-                source_table="realtime_search"
+                source_table=tb_name
             ))
-        
+            
         return DBResponse("search_topic_on_platform", params_for_log, results=all_results, results_count=len(all_results))
+
+def get_search_tools():
+    """返回供LLM调用的工具列表"""
+    search_db = MediaCrawlerDB()
+    return [
+        search_db.search_hot_content,
+        search_db.search_topic_globally,
+        search_db.search_topic_by_date,
+        search_db.get_comments_for_topic,
+        search_db.search_topic_on_platform
+    ]
 
 # --- 3. 测试与使用示例 ---
 def print_response_summary(response: DBResponse):

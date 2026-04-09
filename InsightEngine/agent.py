@@ -617,7 +617,9 @@ class DeepSearchAgent:
             self.state.paragraphs[i].research.mark_completed()
 
             progress = (i + 1) / total_paragraphs * 100
-            logger.info(f"段落处理完成 ({progress:.1f}%)")
+            # 简化进度日志，避免过度刷屏
+            if i == total_paragraphs - 1:
+                logger.info(f"所有段落处理完成 ({progress:.1f}%)")
 
     def _initial_search_and_summary(self, paragraph_index: int):
         """执行初始搜索和总结"""

@@ -76,30 +76,17 @@ def main():
     max_reflections = 2
     max_content_length = 20000
 
-    # 简化的研究查询展示区域
-
-    # 如果有自动查询，使用它作为默认值，否则显示占位符
-    display_query = auto_query if auto_query else "等待从主页面接收分析内容..."
-
-    # 只读的查询展示区域
-    st.text_area(
-        "当前查询",
-        value=display_query,
-        height=100,
-        disabled=True,
-        help="查询内容由主页面的搜索框控制",
-        label_visibility="hidden"
-    )
+    # 移除查询输入框，只保留底层逻辑
+    query = auto_query
 
     # 自动搜索逻辑
     start_research = False
-    query = auto_query
 
     if auto_search and auto_query and 'auto_search_executed' not in st.session_state:
         st.session_state.auto_search_executed = True
         start_research = True
     elif auto_query and not auto_search:
-        st.warning("等待搜索启动信号...")
+        pass # 静默等待信号，不再显示 warning
 
     # 验证配置
     if start_research:
@@ -148,6 +135,9 @@ def main():
                 MEDIA_ENGINE_MODEL_NAME=model_name,
                 SEARCH_TOOL_TYPE="AnspireAPI",
                 ANSPIRE_API_KEY=ansire_key,
+                ANSPIRE_BASE_URL=settings.ANSPIRE_BASE_URL,
+                ANSPIRE_PRO_BASE_URL=settings.ANSPIRE_PRO_BASE_URL,
+                ANSPIRE_USE_PRO=settings.ANSPIRE_USE_PRO,
                 MAX_REFLECTIONS=max_reflections,
                 SEARCH_CONTENT_MAX_LENGTH=max_content_length,
                 OUTPUT_DIR="media_engine_streamlit_reports",

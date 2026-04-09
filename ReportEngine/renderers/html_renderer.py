@@ -683,13 +683,37 @@ class HTMLRenderer:
         if not items:
             return ""
 
+        # 去重逻辑：基于 URL 或 title 进行去重
+        unique_items = []
+        seen_urls = set()
+        seen_titles = set()
+        for item in items:
+            url = item.get("url", "").strip()
+            title = item.get("title", "").strip()
+            
+            # 如果 URL 存在且已见过，跳过
+            if url and url in seen_urls:
+                continue
+            # 如果 URL 为空但 title 已见过，跳过
+            if not url and title and title in seen_titles:
+                continue
+                
+            if url:
+                seen_urls.add(url)
+            if title:
+                seen_titles.add(title)
+                
+            # 重新分配序号
+            item["index"] = len(unique_items) + 1
+            unique_items.append(item)
+
         lines = [
             '<div class="citation-list" style="margin-top: 3rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem;">',
             '<h3 id="citations" style="margin-bottom: 1rem; color: var(--text-secondary); font-size: 1.25rem;">参考资料 / 引用来源</h3>',
             '<ol style="padding-left: 1.5rem; font-size: 0.9em; color: var(--text-secondary); line-height: 1.6;">'
         ]
 
-        for item in items:
+        for item in unique_items:
             index = item.get("index", "")
             title = self._escape_html(item.get("title", ""))
             url = self._escape_html(item.get("url", ""))
@@ -701,10 +725,14 @@ class HTMLRenderer:
 
             lines.append(f'<li id="citation-{index}" style="margin-bottom: 0.5rem; word-break: break-all;">')
             if url:
-                if url.startswith("file:///"):
-                    # 拦截本地附件 URL，调用父级页面的 JS 查看原始合并后的 Seed 文本
-                    display_url = "javascript:if(window.parent && window.parent.viewSeedFile) { window.parent.viewSeedFile(); } else { alert('无法找到源文件。'); }"
-                    lines.append(f'<a href="{display_url}" style="color: var(--primary-color); text-decoration: underline; cursor: pointer;">{title}</a> <span style="font-size: 0.85em; color: var(--text-muted);">[已上传的本地参考附件]</span>')
+                if url.startswith("seed://"):
+                    # 直接生成指向后端的在线预览链接，在新标签页打开
+                    seed_id = url.split("seed://")[1].split("/")[0] if "seed://" in url else ""
+                    display_url = f"/api/report/seed/{seed_id}"
+                    lines.append(f'<a href="{display_url}" target="_blank" style="color: var(--primary-color); text-decoration: underline; cursor: pointer;">{title}</a> <span style="font-size: 0.85em; color: var(--text-muted);">[在线预览附件]</span>')
+                elif url.startswith("file:///"):
+                    # 兼容旧版本地附件 URL，提示无法预览
+                    lines.append(f'<span style="color: var(--text-muted); text-decoration: line-through;">{title}</span> <span style="font-size: 0.85em; color: var(--text-muted);">[本地附件无法直接预览]</span>')
                 else:
                     lines.append(f'<a href="{url}" target="_blank" rel="noopener noreferrer" style="color: var(--primary-color); text-decoration: none;">{title}</a>')
             else:

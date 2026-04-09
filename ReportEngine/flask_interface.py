@@ -694,6 +694,9 @@ def run_report_generation(task: ReportTask, query: str, custom_template: str = "
         task.update_status("cancelled", 0, "用户主动取消了生成")
         task.publish_event('stage', {'message': '生成已取消', 'stage': 'cancelled'})
         logger.info(f"任务 {task.task_id} 已被用户取消")
+        with task_lock:
+            if current_task and current_task.task_id == task.task_id:
+                current_task = None
     except Exception as e:
         logger.exception(f"报告生成过程中发生错误: {str(e)}")
         task.update_status("error", 0, str(e))

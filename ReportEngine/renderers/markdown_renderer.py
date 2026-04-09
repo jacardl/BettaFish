@@ -590,13 +590,34 @@ class MarkdownRenderer:
         if not items:
             return ""
 
+        # 去重逻辑：基于 URL 或 title 进行去重
+        unique_items = []
+        seen_urls = set()
+        seen_titles = set()
+        for item in items:
+            url = item.get("url", "").strip()
+            title = item.get("title", "").strip()
+            
+            if url and url in seen_urls:
+                continue
+            if not url and title and title in seen_titles:
+                continue
+                
+            if url:
+                seen_urls.add(url)
+            if title:
+                seen_titles.add(title)
+                
+            item["index"] = len(unique_items) + 1
+            unique_items.append(item)
+
         lines = [
             "---",
             "### 参考资料 / 引用来源",
             ""
         ]
 
-        for item in items:
+        for item in unique_items:
             index = item.get("index", "")
             title = self._escape_text(item.get("title", ""))
             url = item.get("url", "")
@@ -607,7 +628,13 @@ class MarkdownRenderer:
             date_text = f" ({pub_date})" if pub_date else ""
 
             if url:
-                lines.append(f"{index}. [{title}]({url}){source_text}{date_text}")
+                if url.startswith("seed://"):
+                    seed_id = url.split("seed://")[1].split("/")[0] if "seed://" in url else ""
+                    lines.append(f"{index}. [{title}](/api/report/seed/{seed_id}){source_text}{date_text} `[在线预览附件]`")
+                elif url.startswith("file:///"):
+                    lines.append(f"{index}. ~{title}~{source_text}{date_text} `[本地附件无法直接预览]`")
+                else:
+                    lines.append(f"{index}. [{title}]({url}){source_text}{date_text}")
             else:
                 lines.append(f"{index}. {title}{source_text}{date_text}")
 

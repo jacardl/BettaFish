@@ -76,4 +76,13 @@ async def fetch_all(query: str, params: Optional[Union[Iterable[Any], Dict[str, 
         # 将 RowMapping 转换为普通字典
         return [dict(row) for row in rows]
 
+async def execute_write(query: str, params: Optional[Union[Iterable[Any], Dict[str, Any]]] = None) -> int:
+    """
+    执行写操作（INSERT/UPDATE/DELETE）并返回受影响的行数。
+    """
+    engine: AsyncEngine = get_async_engine()
+    async with engine.begin() as conn:
+        result = await conn.execute(text(query), params or {})
+        return result.rowcount
+
 

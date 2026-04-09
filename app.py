@@ -584,11 +584,19 @@ def read_log_from_file(app_name, tail_lines=None):
         
         with open(log_file_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
-            lines = [line.rstrip('\n\r') for line in lines if line.strip()]
+            # 在返回给前端时截断庞大的 JSON 输出，防止卡顿
+            processed_lines = []
+            for line in lines:
+                line = line.rstrip('\n\r')
+                if not line.strip():
+                    continue
+                if "清理后的输出: {" in line and len(line) > 300:
+                    line = line[:150] + " ... [JSON内容过长，前端已折叠显示]"
+                processed_lines.append(line)
             
             if tail_lines:
-                return lines[-tail_lines:]
-            return lines
+                return processed_lines[-tail_lines:]
+            return processed_lines
     except Exception as e:
         logger.exception(f"Error reading log for {app_name}: {e}")
         return []
@@ -598,6 +606,26 @@ def read_process_output(process, app_name):
     import select
     import sys
     
+    def process_and_emit_line(line):
+        line = line.strip()
+        if not line:
+            return
+        timestamp = datetime.now().strftime('%H:%M:%S')
+        formatted_line = f"[{timestamp}] {line}"
+        
+        # 写入日志文件 (保留完整内容供 ForumEngine 读取)
+        write_log_to_file(app_name, formatted_line)
+        
+        # 发送到前端时截断庞大的 JSON 输出
+        emit_line = formatted_line
+        if "清理后的输出: {" in formatted_line and len(formatted_line) > 300:
+            emit_line = formatted_line[:150] + " ... [JSON内容过长，前端已折叠显示]"
+            
+        socketio.emit('console_output', {
+            'app': app_name,
+            'line': emit_line
+        })
+    
     while True:
         try:
             if process.poll() is not None:
@@ -606,15 +634,7 @@ def read_process_output(process, app_name):
                 if remaining_output:
                     lines = remaining_output.decode('utf-8', errors='replace').split('\n')
                     for line in lines:
-                        line = line.strip()
-                        if line:
-                            timestamp = datetime.now().strftime('%H:%M:%S')
-                            formatted_line = f"[{timestamp}] {line}"
-                            write_log_to_file(app_name, formatted_line)
-                            socketio.emit('console_output', {
-                                'app': app_name,
-                                'line': formatted_line
-                            })
+                        process_and_emit_line(line)
                 break
             
             # 使用非阻塞读取
@@ -622,19 +642,8 @@ def read_process_output(process, app_name):
                 # Windows下使用不同的方法
                 output = process.stdout.readline()
                 if output:
-                    line = output.decode('utf-8', errors='replace').strip()
-                    if line:
-                        timestamp = datetime.now().strftime('%H:%M:%S')
-                        formatted_line = f"[{timestamp}] {line}"
-                        
-                        # 写入日志文件
-                        write_log_to_file(app_name, formatted_line)
-                        
-                        # 发送到前端
-                        socketio.emit('console_output', {
-                            'app': app_name,
-                            'line': formatted_line
-                        })
+                    line = output.decode('utf-8', errors='replace')
+                    process_and_emit_line(line)
                 else:
                     # 没有输出时短暂休眠
                     time.sleep(0.1)
@@ -644,19 +653,8 @@ def read_process_output(process, app_name):
                 if ready:
                     output = process.stdout.readline()
                     if output:
-                        line = output.decode('utf-8', errors='replace').strip()
-                        if line:
-                            timestamp = datetime.now().strftime('%H:%M:%S')
-                            formatted_line = f"[{timestamp}] {line}"
-                            
-                            # 写入日志文件
-                            write_log_to_file(app_name, formatted_line)
-                            
-                            # 发送到前端
-                            socketio.emit('console_output', {
-                                'app': app_name,
-                                'line': formatted_line
-                            })
+                        line = output.decode('utf-8', errors='replace')
+                        process_and_emit_line(line)
                             
         except Exception as e:
             error_msg = f"Error reading output for {app_name}: {e}"
@@ -1195,9 +1193,14 @@ def search():
     if not query:
         return jsonify({'success': False, 'message': '搜索查询不能为空'})
     
-    # ForumEngine论坛已经在后台运行，会自动检测搜索活动
-    # logger.info("ForumEngine: 搜索请求已收到，论坛将自动检测日志变化")
-    
+    # 【新增机制：实时触发增量抓取】
+    # 在分配搜索任务给底层 Agent 之前，先利用 Anspire 抓取全网最新 20 条热点并入库，保证时效性
+    try:
+        from InsightEngine.utils.data_ingestion import ingest_incremental_anspire_data
+        ingest_incremental_anspire_data(query)
+    except Exception as e:
+        logger.error(f"增量数据抓取失败: {e}")
+
     # 检查哪些应用正在运行
     check_app_status()
     running_apps = [name for name, info in processes.items() if info['status'] == 'running']
