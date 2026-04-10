@@ -117,6 +117,26 @@ class MediaCrawlerDB:
             db_utils._engine = None
             return []
 
+    def _build_keyword_conditions(self, topic: str, columns: List[str]) -> Tuple[str, dict]:
+        """
+        将用户的搜索词拆分为多个关键词，并构建 AND 模糊匹配条件。
+        例如: topic="A B", columns=["title", "content"]
+        返回: "( (title LIKE :kw_0 OR content LIKE :kw_0) AND (title LIKE :kw_1 OR content LIKE :kw_1) )" 和 params
+        """
+        keywords = [k.strip() for k in topic.replace('+', ' ').split() if k.strip()][:5]
+        if not keywords:
+            keywords = [topic]
+            
+        conditions = []
+        params = {}
+        for i, kw in enumerate(keywords):
+            kw_key = f"kw_{i}"
+            params[kw_key] = f"%{kw}%"
+            col_conds = [f"{col} LIKE :{kw_key}" for col in columns]
+            conditions.append("(" + " OR ".join(col_conds) + ")")
+            
+        return " AND ".join(conditions), params
+
     def search_hot_content(
         self,
         time_period: Literal['24h', 'week', 'year'] = 'week',
@@ -161,22 +181,27 @@ class MediaCrawlerDB:
         params_for_log = {'topic': topic, 'limit_per_table': limit_per_table}
         logger.info(f"--- TOOL: 本地全库话题搜索 (params: {params_for_log}) ---")
         
-        topic_like = f"%{topic}%"
-        params = {"topic": topic_like, "limit": limit_per_table}
-        
-        queries = [
-            ("seed", "SELECT * FROM daily_news WHERE source_platform = 'seed_document' AND (title LIKE :topic OR description LIKE :topic) ORDER BY add_ts DESC LIMIT :limit"),
-            ("xhs", "SELECT *, extra_info FROM xhs_note WHERE title LIKE :topic OR \"desc\" LIKE :topic ORDER BY time DESC LIMIT :limit"),
-            ("bilibili", "SELECT *, extra_info FROM bilibili_video WHERE title LIKE :topic OR \"desc\" LIKE :topic ORDER BY create_time DESC LIMIT :limit"),
-            ("douyin", "SELECT *, extra_info FROM douyin_aweme WHERE title LIKE :topic OR \"desc\" LIKE :topic ORDER BY create_time DESC LIMIT :limit"),
-            ("weibo", "SELECT *, extra_info FROM weibo_note WHERE content LIKE :topic ORDER BY create_time DESC LIMIT :limit"),
-            ("zhihu", "SELECT *, extra_info FROM zhihu_content WHERE title LIKE :topic OR content_text LIKE :topic ORDER BY created_time DESC LIMIT :limit"),
-            ("kuaishou", "SELECT *, extra_info FROM kuaishou_video WHERE title LIKE :topic OR \"desc\" LIKE :topic ORDER BY create_time DESC LIMIT :limit"),
-            ("tieba", "SELECT *, extra_info FROM tieba_note WHERE title LIKE :topic OR \"desc\" LIKE :topic ORDER BY add_ts DESC LIMIT :limit")
-        ]
+        table_config = {
+            "seed": ("daily_news", "add_ts", ["title", "description"], "source_platform = 'seed_document'"),
+            "xhs": ("xhs_note", "time", ["title", "\"desc\""], None),
+            "bilibili": ("bilibili_video", "create_time", ["title", "\"desc\""], None),
+            "douyin": ("douyin_aweme", "create_time", ["title", "\"desc\""], None),
+            "weibo": ("weibo_note", "create_time", ["content"], None),
+            "zhihu": ("zhihu_content", "created_time", ["title", "content_text"], None),
+            "kuaishou": ("kuaishou_video", "create_time", ["title", "\"desc\""], None),
+            "tieba": ("tieba_note", "add_ts", ["title", "\"desc\""], None)
+        }
         
         all_results = []
-        for platform, sql in queries:
+        for platform, (tb_name, col_time, cols, extra_cond) in table_config.items():
+            cond_sql, params = self._build_keyword_conditions(topic, cols)
+            params["limit"] = limit_per_table
+            
+            if extra_cond:
+                sql = f"SELECT * FROM {tb_name} WHERE {extra_cond} AND ({cond_sql}) ORDER BY {col_time} DESC LIMIT :limit"
+            else:
+                sql = f"SELECT * FROM {tb_name} WHERE {cond_sql} ORDER BY {col_time} DESC LIMIT :limit"
+                
             rows = self._safe_query(sql, params)
             for r in rows:
                 title = r.get('title', '')
@@ -223,19 +248,23 @@ class MediaCrawlerDB:
         except Exception:
             return DBResponse("search_topic_by_date", params_for_log, error_message="日期格式错误，需为 YYYY-MM-DD")
             
-        topic_like = f"%{topic}%"
-        params = {"topic": topic_like, "start_ts": start_ts, "end_ts": end_ts, "limit": limit_per_table}
-        
-        queries = [
-            ("xhs", "SELECT *, extra_info FROM xhs_note WHERE (title LIKE :topic OR \"desc\" LIKE :topic) AND time >= :start_ts AND time <= :end_ts LIMIT :limit"),
-            ("bilibili", "SELECT *, extra_info FROM bilibili_video WHERE (title LIKE :topic OR \"desc\" LIKE :topic) AND create_time >= :start_ts AND create_time <= :end_ts LIMIT :limit"),
-            ("douyin", "SELECT *, extra_info FROM douyin_aweme WHERE (title LIKE :topic OR \"desc\" LIKE :topic) AND create_time >= :start_ts AND create_time <= :end_ts LIMIT :limit"),
-            ("weibo", "SELECT *, extra_info FROM weibo_note WHERE content LIKE :topic AND create_time >= :start_ts AND create_time <= :end_ts LIMIT :limit"),
-            ("tieba", "SELECT *, extra_info FROM tieba_note WHERE (title LIKE :topic OR \"desc\" LIKE :topic) AND add_ts >= :start_ts AND add_ts <= :end_ts LIMIT :limit")
-        ]
+        table_config = {
+            "xhs": ("xhs_note", "time", ["title", "\"desc\""]),
+            "bilibili": ("bilibili_video", "create_time", ["title", "\"desc\""]),
+            "douyin": ("douyin_aweme", "create_time", ["title", "\"desc\""]),
+            "weibo": ("weibo_note", "create_time", ["content"]),
+            "tieba": ("tieba_note", "add_ts", ["title", "\"desc\""])
+        }
         
         all_results = []
-        for platform, sql in queries:
+        for platform, (tb_name, col_time, cols) in table_config.items():
+            cond_sql, params = self._build_keyword_conditions(topic, cols)
+            params["start_ts"] = start_ts
+            params["end_ts"] = end_ts
+            params["limit"] = limit_per_table
+            
+            sql = f"SELECT *, extra_info FROM {tb_name} WHERE ({cond_sql}) AND {col_time} >= :start_ts AND {col_time} <= :end_ts ORDER BY {col_time} DESC LIMIT :limit"
+            
             rows = self._safe_query(sql, params)
             for r in rows:
                 title = r.get('title', '')
@@ -274,20 +303,24 @@ class MediaCrawlerDB:
         params_for_log = {'topic': topic, 'limit': limit}
         logger.info(f"--- TOOL: 本地挖掘话题讨论 (params: {params_for_log}) ---")
         
-        topic_like = f"%{topic}%"
-        params = {"topic": topic_like, "limit": limit}
-        
-        comment_queries = [
-            ("xhs", "SELECT content, create_time as time, nickname FROM xhs_note_comment WHERE content LIKE :topic LIMIT :limit"),
-            ("douyin", "SELECT content, create_time as time, nickname FROM douyin_aweme_comment WHERE content LIKE :topic LIMIT :limit"),
-            ("bilibili", "SELECT content, create_time as time, nickname FROM bilibili_video_comment WHERE content LIKE :topic LIMIT :limit"),
-            ("weibo", "SELECT content, create_time as time, nickname FROM weibo_note_comment WHERE content LIKE :topic LIMIT :limit"),
-            ("zhihu", "SELECT content, publish_time as time, user_nickname as nickname FROM zhihu_comment WHERE content LIKE :topic LIMIT :limit"),
-            ("tieba", "SELECT content, publish_time as time, user_nickname as nickname FROM tieba_comment WHERE content LIKE :topic LIMIT :limit"),
-        ]
+        table_config = {
+            "xhs": ("xhs_note_comment", "create_time"),
+            "douyin": ("douyin_aweme_comment", "create_time"),
+            "bilibili": ("bilibili_video_comment", "create_time"),
+            "weibo": ("weibo_note_comment", "create_time"),
+            "zhihu": ("zhihu_comment", "publish_time"),
+            "tieba": ("tieba_comment", "publish_time"),
+        }
         
         formatted = []
-        for platform, sql in comment_queries:
+        for platform, (tb_name, col_time) in table_config.items():
+            cond_sql, params = self._build_keyword_conditions(topic, ["content"])
+            params["limit"] = limit
+            sql = f"SELECT content, {col_time} as time, nickname FROM {tb_name} WHERE {cond_sql} LIMIT :limit"
+            # 兼容知乎贴吧字段名
+            if platform in ["zhihu", "tieba"]:
+                sql = sql.replace("nickname", "user_nickname as nickname")
+                
             rows = self._safe_query(sql, params)
             for r in rows:
                 formatted.append(QueryResult(
@@ -315,9 +348,6 @@ class MediaCrawlerDB:
         params_for_log = {'platform': platform, 'topic': topic, 'start_date': start_date, 'end_date': end_date, 'limit': limit}
         logger.info(f"--- TOOL: 本地定向平台搜索 (params: {params_for_log}) ---")
 
-        topic_like = f"%{topic}%"
-        params = {"topic": topic_like, "limit": limit}
-        
         table_map = {
             'xhs': ('xhs_note', 'title', 'desc', 'time'),
             'bilibili': ('bilibili_video', 'title', 'desc', 'create_time'),
@@ -332,6 +362,8 @@ class MediaCrawlerDB:
             return DBResponse("search_topic_on_platform", params_for_log, error_message=f"不支持的平台: {platform}")
 
         tb_name, col_title, col_desc, col_time = table_map[platform]
+        cond_sql, params = self._build_keyword_conditions(topic, [col_title, f'"{col_desc}"'])
+        params["limit"] = limit
         
         # 构建时间过滤
         time_filter = ""
@@ -345,7 +377,7 @@ class MediaCrawlerDB:
             except Exception:
                 pass
                 
-        sql = f"SELECT * FROM {tb_name} WHERE ({col_title} LIKE :topic OR \"{col_desc}\" LIKE :topic) {time_filter} ORDER BY {col_time} DESC LIMIT :limit"
+        sql = f"SELECT * FROM {tb_name} WHERE ({cond_sql}) {time_filter} ORDER BY {col_time} DESC LIMIT :limit"
         
         rows = self._safe_query(sql, params)
         

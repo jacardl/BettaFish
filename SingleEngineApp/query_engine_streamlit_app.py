@@ -97,20 +97,15 @@ def main():
         if not settings.QUERY_ENGINE_API_KEY:
             st.error("请在您的环境变量中设置QUERY_ENGINE_API_KEY")
             return
-        if not settings.TAVILY_API_KEY:
-            st.error("请在您的环境变量中设置TAVILY_API_KEY")
-            return
 
         # 自动使用配置文件中的API密钥
         engine_key = settings.QUERY_ENGINE_API_KEY
-        tavily_key = settings.TAVILY_API_KEY
 
         # 创建配置
         config = Settings(
             QUERY_ENGINE_API_KEY=engine_key,
             QUERY_ENGINE_BASE_URL=settings.QUERY_ENGINE_BASE_URL,
             QUERY_ENGINE_MODEL_NAME=model_name,
-            TAVILY_API_KEY=tavily_key,
             MAX_REFLECTIONS=max_reflections,
             SEARCH_CONTENT_MAX_LENGTH=max_content_length,
             OUTPUT_DIR="query_engine_streamlit_reports"

@@ -78,6 +78,24 @@ class TavilyNewsAgency:
         """初始化客户端（API Key参数保留以兼容旧代码，但不再使用）"""
         pass
 
+    def _build_keyword_conditions(self, topic: str, columns: List[str]) -> Tuple[str, dict]:
+        """
+        将用户的搜索词拆分为多个关键词，并构建 AND 模糊匹配条件。
+        """
+        keywords = [k.strip() for k in topic.replace('+', ' ').split() if k.strip()][:5]
+        if not keywords:
+            keywords = [topic]
+            
+        conditions = []
+        params = {}
+        for i, kw in enumerate(keywords):
+            kw_key = f"kw_{i}"
+            params[kw_key] = f"%{kw}%"
+            col_conds = [f"{col} LIKE :{kw_key}" for col in columns]
+            conditions.append("(" + " OR ".join(col_conds) + ")")
+            
+        return " AND ".join(conditions), params
+
     def _parse_timestamp(self, ts) -> str:
         """将毫秒时间戳转换为 YYYY-MM-DD HH:MM:SS 格式"""
         if not ts:
@@ -89,35 +107,54 @@ class TavilyNewsAgency:
 
     async def _search_local_db_async(self, query: str, limit: int = 10, start_ts: int = 0, end_ts: int = 0):
         """异步查询本地数据库的各个表"""
-        params = {"topic": f"%{query}%", "limit": limit}
         time_filter = ""
+        time_params = {}
         if start_ts > 0:
-            params["start_ts"] = start_ts
+            time_params["start_ts"] = start_ts
             time_filter += " AND {time_col} >= :start_ts"
         if end_ts > 0:
-            params["end_ts"] = end_ts
+            time_params["end_ts"] = end_ts
             time_filter += " AND {time_col} <= :end_ts"
             
-        queries = [
-            ("seed", f"SELECT title, description as content, add_ts as time, url, extra_info FROM daily_news WHERE source_platform = 'seed_document' AND (title LIKE :topic OR description LIKE :topic){time_filter.format(time_col='add_ts')} ORDER BY add_ts DESC LIMIT :limit"),
-            ("xhs", f"SELECT title, \"desc\" as content, time, note_url as url, extra_info FROM xhs_note WHERE (title LIKE :topic OR \"desc\" LIKE :topic){time_filter.format(time_col='time')} ORDER BY time DESC LIMIT :limit"),
-            ("bilibili", f"SELECT title, \"desc\" as content, create_time as time, video_url as url, extra_info FROM bilibili_video WHERE (title LIKE :topic OR \"desc\" LIKE :topic){time_filter.format(time_col='create_time')} ORDER BY create_time DESC LIMIT :limit"),
-            ("douyin", f"SELECT title, \"desc\" as content, create_time as time, aweme_url as url, extra_info FROM douyin_aweme WHERE (title LIKE :topic OR \"desc\" LIKE :topic){time_filter.format(time_col='create_time')} ORDER BY create_time DESC LIMIT :limit"),
-            ("weibo", f"SELECT '' as title, content, create_time as time, note_url as url, extra_info FROM weibo_note WHERE content LIKE :topic{time_filter.format(time_col='create_time')} ORDER BY create_time DESC LIMIT :limit"),
-            ("zhihu", f"SELECT title, content_text as content, created_time as time, url, extra_info FROM zhihu_content WHERE (title LIKE :topic OR content_text LIKE :topic){time_filter.format(time_col='created_time')} ORDER BY created_time DESC LIMIT :limit"),
-            ("tieba", f"SELECT title, \"desc\" as content, add_ts as time, note_url as url, extra_info FROM tieba_note WHERE (title LIKE :topic OR \"desc\" LIKE :topic){time_filter.format(time_col='add_ts')} ORDER BY add_ts DESC LIMIT :limit")
-        ]
+        table_config = {
+            "seed": ("daily_news", "add_ts", ["title", "description"], "source_platform = 'seed_document'"),
+            "xhs": ("xhs_note", "time", ["title", "\"desc\""], None),
+            "bilibili": ("bilibili_video", "create_time", ["title", "\"desc\""], None),
+            "douyin": ("douyin_aweme", "create_time", ["title", "\"desc\""], None),
+            "weibo": ("weibo_note", "create_time", ["content"], None),
+            "zhihu": ("zhihu_content", "created_time", ["title", "content_text"], None),
+            "tieba": ("tieba_note", "add_ts", ["title", "\"desc\""], None)
+        }
         
         results = []
         images_results = []
         try:
-            tasks = [fetch_all(sql, params) for _, sql in queries]
+            tasks = []
+            platform_order = []
+            for platform, (tb_name, col_time, cols, extra_cond) in table_config.items():
+                cond_sql, params = self._build_keyword_conditions(query, cols)
+                params.update(time_params)
+                params["limit"] = limit
+                
+                if extra_cond:
+                    sql = f"SELECT title, {cols[-1]} as content, {col_time} as time, {'url' if platform == 'seed' else 'note_url' if platform in ('xhs', 'tieba', 'weibo') else 'video_url' if platform in ('bilibili', 'douyin') else 'url'} as url, extra_info FROM {tb_name} WHERE {extra_cond} AND ({cond_sql}){time_filter.format(time_col=col_time)} ORDER BY {col_time} DESC LIMIT :limit"
+                else:
+                    # Weibo has no title column
+                    if platform == "weibo":
+                        sql = f"SELECT '' as title, content, {col_time} as time, note_url as url, extra_info FROM {tb_name} WHERE ({cond_sql}){time_filter.format(time_col=col_time)} ORDER BY {col_time} DESC LIMIT :limit"
+                    else:
+                        url_col = 'url' if platform in ('zhihu',) else 'note_url' if platform in ('xhs', 'tieba') else 'video_url' if platform in ('bilibili', 'douyin') else 'url'
+                        sql = f"SELECT title, {cols[-1]} as content, {col_time} as time, {url_col} as url, extra_info FROM {tb_name} WHERE ({cond_sql}){time_filter.format(time_col=col_time)} ORDER BY {col_time} DESC LIMIT :limit"
+                
+                tasks.append(fetch_all(sql, params))
+                platform_order.append(platform)
+                
             all_rows = await asyncio.gather(*tasks, return_exceptions=True)
             for i, rows in enumerate(all_rows):
                 if isinstance(rows, Exception):
                     logger.debug(f"查询本地库出错或表不存在: {rows}")
                     continue
-                platform = queries[i][0]
+                platform = platform_order[i]
                 for r in rows:
                     title = r.get('title', '')
                     content = r.get('content', '')

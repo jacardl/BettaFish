@@ -19,10 +19,26 @@ from InsightEngine.utils.config import settings
 __all__ = [
     "get_async_engine",
     "fetch_all",
+    "execute_write",
+    "_run_async"
 ]
 
 
 _engine: Optional[AsyncEngine] = None
+
+def _run_async(coro):
+    """安全的异步执行包装器，兼容多线程与事件循环环境"""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+        
+    if loop and loop.is_running():
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(1) as pool:
+            return pool.submit(asyncio.run, coro).result()
+    else:
+        return asyncio.run(coro)
 
 
 def _build_database_url() -> str:

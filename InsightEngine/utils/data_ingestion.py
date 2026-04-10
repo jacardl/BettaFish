@@ -25,8 +25,8 @@ def _run_async(coro):
 def ingest_seed_data(seed_id: str):
     """将用户上传的 seed 文件内容解析并持久化到本地数据库中"""
     root_dir = Path(__file__).parent.parent.parent
-    seed_path_json = root_dir / 'output' / 'seeds' / f"{seed_id}.json"
-    seed_path_txt = root_dir / 'output' / 'seeds' / f"{seed_id}.txt"
+    seed_path_json = root_dir / 'final_reports' / 'seeds' / f"{seed_id}.json"
+    seed_path_txt = root_dir / 'final_reports' / 'seeds' / f"{seed_id}.txt"
     
     seed_text = ""
     title = "用户上传的参考资料(Seed)"
@@ -46,39 +46,59 @@ def ingest_seed_data(seed_id: str):
     if not seed_text:
         return
         
+    # Split text into chunks to simulate multiple crawled documents
+    chunk_size = 5000
+    chunks = [seed_text[i:i+chunk_size] for i in range(0, len(seed_text), chunk_size)]
+    
     now_ts = int(datetime.now().timestamp() * 1000)
-    news_id = f"seed_{seed_id[:8]}_{now_ts}"
     crawl_date = datetime.now().date()
     
     sql = """
         INSERT INTO daily_news (news_id, source_platform, title, description, url, crawl_date, add_ts, last_modify_ts, rank_position)
         VALUES (:nid, :platform, :title, :desc, :url, :cdate, :add_ts, :add_ts, 1)
     """
-    params = {
-        "nid": news_id,
-        "platform": "seed_document",
-        "title": title,
-        "desc": seed_text[:20000],  # 截断超长文本防止爆库
-        "url": url,
-        "cdate": crawl_date,
-        "add_ts": now_ts
-    }
-    try:
-        affected = _run_async(execute_write(sql, params))
-        logger.info(f"✅ Seed 文件 ({seed_id}) 已持久化至 daily_news 表, 影响行数: {affected}")
+    
+    inserted_count = 0
+    for idx, chunk in enumerate(chunks):
+        chunk_title = f"{title}_片段{idx+1}"
+        news_id = f"seed_{seed_id[:8]}_{now_ts}_{idx}"
         
-        # 将 seed 的入库行为记录到 crawler.log
-        log_file = root_dir / "logs" / "crawler.log"
-        if log_file.parent.exists():
-            with open(log_file, "a", encoding="utf-8") as f:
-                ts = datetime.now().strftime('%H:%M:%S')
-                f.write(f"[{ts}] [SYSTEM] 📥 [Seed入库] 成功将用户上传的附件 '{title}' (ID: {seed_id}) 解析并写入本地 daily_news 数据库。\n")
-                
-    except Exception as e:
-        logger.error(f"❌ 插入 Seed 数据失败: {e}")
-    finally:
-        import InsightEngine.utils.db as db_utils
-        db_utils._engine = None  # Prevent event loop reuse issues
+        params = {
+            "nid": news_id,
+            "platform": "seed_document",
+            "title": chunk_title,
+            "desc": chunk,
+            "url": url,
+            "cdate": crawl_date,
+            "add_ts": now_ts + idx  # 保证时间戳唯一性
+        }
+        
+        try:
+            _run_async(execute_write(sql, params))
+            inserted_count += 1
+            
+            # 单条记录逐一写入 crawler.log
+            log_file = root_dir / "logs" / "crawler.log"
+            if log_file.parent.exists():
+                with open(log_file, "a", encoding="utf-8") as f:
+                    ts_str = datetime.now().strftime('%H:%M:%S')
+                    short_title = chunk_title[:40] + '...' if len(chunk_title) > 40 else chunk_title
+                    f.write(f"[{ts_str}] [RECORD] � 成功插入 [seed] -> [seed_document] {short_title}\n")
+                    
+        except Exception as e:
+            logger.error(f"❌ 插入 Seed 数据分片 {idx+1} 失败: {e}")
+        finally:
+            import InsightEngine.utils.db as db_utils
+            db_utils._engine = None  # Prevent event loop reuse issues
+            
+    logger.info(f"✅ Seed 文件 ({seed_id}) 已拆分为 {len(chunks)} 个片段并持久化至 daily_news 表, 成功插入 {inserted_count} 条")
+    
+    # 将 seed 总体入库行为记录到 crawler.log
+    log_file = root_dir / "logs" / "crawler.log"
+    if log_file.parent.exists():
+        with open(log_file, "a", encoding="utf-8") as f:
+            ts_str = datetime.now().strftime('%H:%M:%S')
+            f.write(f"[{ts_str}] [SYSTEM] 📥 [Seed入库] 成功将用户上传的附件 '{title}' (ID: {seed_id}) 拆分为 {len(chunks)} 条记录并写入本地数据库。\n")
 
 
 def _insert_results_into_db(results, now_ts, source_name):

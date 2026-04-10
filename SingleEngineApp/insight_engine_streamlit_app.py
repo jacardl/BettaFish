@@ -120,10 +120,6 @@ def main():
             DB_PORT=db_port,
             DB_CHARSET=db_charset,
             DB_DIALECT=settings.DB_DIALECT,
-            ANSPIRE_API_KEY=settings.ANSPIRE_API_KEY,
-            ANSPIRE_BASE_URL=settings.ANSPIRE_BASE_URL,
-            ANSPIRE_PRO_BASE_URL=settings.ANSPIRE_PRO_BASE_URL,
-            ANSPIRE_USE_PRO=settings.ANSPIRE_USE_PRO,
             MAX_REFLECTIONS=max_reflections,
             MAX_CONTENT_LENGTH=max_content_length,
             OUTPUT_DIR="insight_engine_streamlit_reports"
