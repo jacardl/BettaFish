@@ -1,28 +1,21 @@
 """
-专为 AI Agent 设计的舆情搜索工具集 (Tavily)
+专为 AI Agent 设计的舆情搜索工具集 (本地数据库)
 
-版本: 1.5
+版本: 2.0
 最后更新: 2025-08-22
 
-此脚本将复杂的Tavily搜索功能分解为一系列目标明确、参数极少的独立工具，
-专为AI Agent调用而设计。Agent只需根据任务意图选择合适的工具，
-无需理解复杂的参数组合。所有工具默认搜索“新闻”(topic='news')。
+此脚本将搜索功能重构为从本地 SQLite 数据库中检索数据，
+保持了与原有 Tavily 接口相同的签名和返回结构，以便 Agent 无缝切换。
 
 新特性:
-- 新增 `basic_search_news` 工具，用于执行标准、通用的新闻搜索。
-- 每个搜索结果现在都包含 `published_date` (新闻发布日期)。
-
-主要工具:
-- basic_search_news: (新增) 执行标准、快速的通用新闻搜索。
-- deep_search_news: 对主题进行最全面的深度分析。
-- search_news_last_24_hours: 获取24小时内的最新动态。
-- search_news_last_week: 获取过去一周的主要报道。
-- search_images_for_news: 查找与新闻主题相关的图片。
-- search_news_by_date: 在指定的历史日期范围内搜索。
+- 彻底移除 Tavily 依赖，改为检索本地每日新闻及社媒表。
+- 提取 extra_info 中的多模态数据。
 """
 
 import os
 import sys
+import datetime
+import asyncio
 from typing import List, Dict, Any, Optional
 
 # 添加utils目录到Python路径
@@ -35,11 +28,12 @@ if utils_dir not in sys.path:
 from retry_helper import with_graceful_retry, SEARCH_API_RETRY_CONFIG
 from dataclasses import dataclass, field
 
-# 运行前请确保已安装Tavily库: pip install tavily-python
-try:
-    from tavily import TavilyClient
-except ImportError:
-    raise ImportError("Tavily库未安装，请运行 `pip install tavily-python` 进行安装。")
+# 引入本地数据库查询工具
+sys.path.insert(0, root_dir)
+from InsightEngine.utils.db import fetch_all, _run_async
+import logging
+
+logger = logging.getLogger(__name__)
 
 # --- 1. 数据结构定义 ---
 
@@ -64,7 +58,7 @@ class ImageResult:
 
 @dataclass
 class TavilyResponse:
-    """封装Tavily API的完整返回结果，以便在工具间传递"""
+    """封装搜索 API 的完整返回结果，保持原有命名以便兼容"""
     query: str
     answer: Optional[str] = None
     results: List[SearchResult] = field(default_factory=list)
@@ -77,120 +71,165 @@ class TavilyResponse:
 class TavilyNewsAgency:
     """
     一个包含多种专用新闻舆情搜索工具的客户端。
-    每个公共方法都设计为供 AI Agent 独立调用的工具。
+    底层已重构为本地数据库查询。
     """
 
     def __init__(self, api_key: Optional[str] = None):
-        """
-        初始化客户端。
-        Args:
-            api_key: Tavily API密钥，若不提供则从环境变量 TAVILY_API_KEY 读取。
-        """
-        if api_key is None:
-            api_key = os.getenv("TAVILY_API_KEY")
-            if not api_key:
-                raise ValueError("Tavily API Key未找到！请设置TAVILY_API_KEY环境变量或在初始化时提供")
-        self._client = TavilyClient(api_key=api_key)
+        """初始化客户端（API Key参数保留以兼容旧代码，但不再使用）"""
+        pass
+
+    def _parse_timestamp(self, ts) -> str:
+        """将毫秒时间戳转换为 YYYY-MM-DD HH:MM:SS 格式"""
+        if not ts:
+            return ""
+        try:
+            return datetime.datetime.fromtimestamp(int(ts) / 1000).strftime('%Y-%m-%d %H:%M:%S')
+        except Exception:
+            return str(ts)
+
+    async def _search_local_db_async(self, query: str, limit: int = 10, start_ts: int = 0, end_ts: int = 0):
+        """异步查询本地数据库的各个表"""
+        params = {"topic": f"%{query}%", "limit": limit}
+        time_filter = ""
+        if start_ts > 0:
+            params["start_ts"] = start_ts
+            time_filter += " AND {time_col} >= :start_ts"
+        if end_ts > 0:
+            params["end_ts"] = end_ts
+            time_filter += " AND {time_col} <= :end_ts"
+            
+        queries = [
+            ("seed", f"SELECT title, description as content, add_ts as time, url, extra_info FROM daily_news WHERE source_platform = 'seed_document' AND (title LIKE :topic OR description LIKE :topic){time_filter.format(time_col='add_ts')} ORDER BY add_ts DESC LIMIT :limit"),
+            ("xhs", f"SELECT title, \"desc\" as content, time, note_url as url, extra_info FROM xhs_note WHERE (title LIKE :topic OR \"desc\" LIKE :topic){time_filter.format(time_col='time')} ORDER BY time DESC LIMIT :limit"),
+            ("bilibili", f"SELECT title, \"desc\" as content, create_time as time, video_url as url, extra_info FROM bilibili_video WHERE (title LIKE :topic OR \"desc\" LIKE :topic){time_filter.format(time_col='create_time')} ORDER BY create_time DESC LIMIT :limit"),
+            ("douyin", f"SELECT title, \"desc\" as content, create_time as time, aweme_url as url, extra_info FROM douyin_aweme WHERE (title LIKE :topic OR \"desc\" LIKE :topic){time_filter.format(time_col='create_time')} ORDER BY create_time DESC LIMIT :limit"),
+            ("weibo", f"SELECT '' as title, content, create_time as time, note_url as url, extra_info FROM weibo_note WHERE content LIKE :topic{time_filter.format(time_col='create_time')} ORDER BY create_time DESC LIMIT :limit"),
+            ("zhihu", f"SELECT title, content_text as content, created_time as time, url, extra_info FROM zhihu_content WHERE (title LIKE :topic OR content_text LIKE :topic){time_filter.format(time_col='created_time')} ORDER BY created_time DESC LIMIT :limit"),
+            ("tieba", f"SELECT title, \"desc\" as content, add_ts as time, note_url as url, extra_info FROM tieba_note WHERE (title LIKE :topic OR \"desc\" LIKE :topic){time_filter.format(time_col='add_ts')} ORDER BY add_ts DESC LIMIT :limit")
+        ]
+        
+        results = []
+        images_results = []
+        try:
+            tasks = [fetch_all(sql, params) for _, sql in queries]
+            all_rows = await asyncio.gather(*tasks, return_exceptions=True)
+            for i, rows in enumerate(all_rows):
+                if isinstance(rows, Exception):
+                    logger.debug(f"查询本地库出错或表不存在: {rows}")
+                    continue
+                platform = queries[i][0]
+                for r in rows:
+                    title = r.get('title', '')
+                    content = r.get('content', '')
+                    time_val = r.get('time')
+                    url = r.get('url')
+                    extra_info_str = r.get('extra_info', '')
+                    
+                    raw_content = content
+                    if extra_info_str:
+                        try:
+                            import json
+                            extra_data = json.loads(extra_info_str)
+                            if 'images' in extra_data and isinstance(extra_data['images'], list):
+                                for img_url in extra_data['images']:
+                                    if img_url:
+                                        images_results.append(ImageResult(
+                                            description=f"[{platform.upper()}] 图片",
+                                            url=img_url
+                                        ))
+                            if 'video_url' in extra_data and extra_data['video_url']:
+                                raw_content += f"\n[视频链接: {extra_data['video_url']}]"
+                            
+                            # 将完整 JSON 存入 raw_content 以供深度分析
+                            raw_content += f"\n[附加数据: {json.dumps(extra_data, ensure_ascii=False)}]"
+                        except Exception:
+                            pass
+                    
+                    results.append(SearchResult(
+                        title=f"[{platform.upper()}] {title}" if title else f"[{platform.upper()}] 网友讨论",
+                        url=url or f"local://{platform}/{time_val}",
+                        content=content[:300] + "..." if len(content) > 300 else content,
+                        raw_content=raw_content,
+                        published_date=self._parse_timestamp(time_val)
+                    ))
+        finally:
+            import InsightEngine.utils.db as db_utils
+            db_utils._engine = None  # Clear global engine to prevent event loop issues
+        
+        # 按照时间降序排序，并截取前 limit 个
+        results.sort(key=lambda x: x.published_date or "", reverse=True)
+        return results[:limit], images_results
+
+    def _search_local_db(self, query: str, limit: int = 10, start_ts: int = 0, end_ts: int = 0):
+        return _run_async(self._search_local_db_async(query, limit, start_ts, end_ts))
 
     @with_graceful_retry(SEARCH_API_RETRY_CONFIG, default_return=TavilyResponse(query="搜索失败"))
-    def _search_internal(self, **kwargs) -> TavilyResponse:
+    def _search_internal(self, query: str, max_results: int = 10, start_ts: int = 0, end_ts: int = 0) -> TavilyResponse:
         """内部通用的搜索执行器，所有工具最终都调用此方法"""
         try:
-            kwargs['topic'] = 'general'
-            # 强制开启获取全文选项，避免因 snippet 被截断导致 LLM 脑补幻觉
-            kwargs['include_raw_content'] = True
-            api_params = {k: v for k, v in kwargs.items() if v is not None}
-            response_dict = self._client.search(**api_params)
-            
-            search_results = [
-                SearchResult(
-                    title=item.get('title'),
-                    url=item.get('url'),
-                    content=item.get('content'),
-                    score=item.get('score'),
-                    # 优先使用 raw_content (全文)，如果没有则退化为 content (摘要)
-                    raw_content=item.get('raw_content') or item.get('content'),
-                    published_date=item.get('published_date')
-                ) for item in response_dict.get('results', [])
-            ]
-            
-            image_results = [ImageResult(url=item.get('url'), description=item.get('description')) for item in response_dict.get('images', [])]
-
+            results, images = self._search_local_db(query, limit=max_results, start_ts=start_ts, end_ts=end_ts)
             return TavilyResponse(
-                query=response_dict.get('query'), answer=response_dict.get('answer'),
-                results=search_results, images=image_results,
-                response_time=response_dict.get('response_time')
+                query=query, 
+                answer=None,
+                results=results, 
+                images=images,
+                response_time=0.1
             )
         except Exception as e:
             print(f"搜索时发生错误: {str(e)}")
-            raise e  # 让重试机制捕获并处理
+            raise e
 
     # --- Agent 可用的工具方法 ---
 
     def basic_search_news(self, query: str, max_results: int = 7) -> TavilyResponse:
         """
         【工具】基础新闻搜索: 执行一次标准、快速的新闻搜索。
-        这是最常用的通用搜索工具，适用于不确定需要何种特定搜索时。
-        Agent可提供搜索查询(query)和可选的最大结果数(max_results)。
         """
         print(f"--- TOOL: 基础新闻搜索 (query: {query}) ---")
-        return self._search_internal(
-            query=query,
-            max_results=max_results,
-            search_depth="basic",
-            include_answer=False
-        )
+        return self._search_internal(query=query, max_results=max_results)
 
     def deep_search_news(self, query: str) -> TavilyResponse:
         """
         【工具】深度新闻分析: 对一个主题进行最全面、最深入的搜索。
-        返回AI生成的“高级”详细摘要答案和最多20条最相关的新闻结果。适用于需要全面了解某个事件背景的场景。
-        Agent只需提供搜索查询(query)。
         """
         print(f"--- TOOL: 深度新闻分析 (query: {query}) ---")
-        return self._search_internal(
-            query=query, search_depth="advanced", max_results=20, include_answer="advanced"
-        )
+        return self._search_internal(query=query, max_results=20)
 
     def search_news_last_24_hours(self, query: str) -> TavilyResponse:
         """
         【工具】搜索24小时内新闻: 获取关于某个主题的最新动态。
-        此工具专门查找过去24小时内发布的新闻。适用于追踪突发事件或最新进展。
-        Agent只需提供搜索查询(query)。
         """
         print(f"--- TOOL: 搜索24小时内新闻 (query: {query}) ---")
-        return self._search_internal(query=query, time_range='d', max_results=10)
+        start_ts = int((datetime.datetime.now() - datetime.timedelta(days=1)).timestamp() * 1000)
+        return self._search_internal(query=query, max_results=10, start_ts=start_ts)
 
     def search_news_last_week(self, query: str) -> TavilyResponse:
         """
         【工具】搜索本周新闻: 获取关于某个主题过去一周内的主要新闻报道。
-        适用于进行周度舆情总结或回顾。
-        Agent只需提供搜索查询(query)。
         """
         print(f"--- TOOL: 搜索本周新闻 (query: {query}) ---")
-        return self._search_internal(query=query, time_range='w', max_results=10)
+        start_ts = int((datetime.datetime.now() - datetime.timedelta(weeks=1)).timestamp() * 1000)
+        return self._search_internal(query=query, max_results=10, start_ts=start_ts)
 
     def search_images_for_news(self, query: str) -> TavilyResponse:
         """
         【工具】查找新闻图片: 搜索与某个新闻主题相关的图片。
-        此工具会返回图片链接及描述，适用于需要为报告或文章配图的场景。
-        Agent只需提供搜索查询(query)。
         """
         print(f"--- TOOL: 查找新闻图片 (query: {query}) ---")
-        return self._search_internal(
-            query=query, include_images=True, include_image_descriptions=True, max_results=5
-        )
+        return self._search_internal(query=query, max_results=5)
 
     def search_news_by_date(self, query: str, start_date: str, end_date: str) -> TavilyResponse:
         """
-        【工具】按指定日期范围搜索新闻: 在一个明确的历史时间段内搜索新闻。
-        这是唯一需要Agent提供详细时间参数的工具。适用于需要对特定历史事件进行分析的场景。
-        Agent需要提供查询(query)、开始日期(start_date)和结束日期(end_date)，格式均为 'YYYY-MM-DD'。
+        【工具】按指定日期范围搜索新闻。
         """
         print(f"--- TOOL: 按指定日期范围搜索新闻 (query: {query}, from: {start_date}, to: {end_date}) ---")
-        return self._search_internal(
-            query=query, start_date=start_date, end_date=end_date, max_results=15
-        )
+        try:
+            start_ts = int(datetime.datetime.strptime(start_date, '%Y-%m-%d').timestamp() * 1000)
+            end_ts = int(datetime.datetime.strptime(end_date, '%Y-%m-%d').timestamp() * 1000)
+        except Exception:
+            start_ts = 0
+            end_ts = 0
+        return self._search_internal(query=query, max_results=15, start_ts=start_ts, end_ts=end_ts)
 
 
 # --- 3. 测试与使用示例 ---

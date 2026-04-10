@@ -65,18 +65,13 @@ class FactCheckerNode:
                     
         # 2. 第二遍扫描，插入置信度 Callout 并阻断低置信度章节
         new_blocks = []
-        skip_current_heading = False
 
         for i, block in enumerate(blocks):
             if block.get("type") == "heading":
-                skip_current_heading = False
-                
                 # 如果这个 heading 不在 heading_citation_counts 中，说明它是一级标题
                 if i in heading_citation_counts:
                     citations = heading_citation_counts[i]
                     if citations == 0:
-                        # 0引用的情况下，阻断后续内容的输出，但保留标题，显示低置信度警告
-                        skip_current_heading = True
                         new_blocks.append(block)
                         
                         callout_block = {
@@ -88,7 +83,7 @@ class FactCheckerNode:
                                     "type": "paragraph",
                                     "inlines": [
                                         {
-                                            "text": "无数据支撑，无法分析。"
+                                            "text": "⚠️ 本节内容未能通过多方信息源的交叉验证（缺乏足够的不同数据源支撑，或各方表述不一致）。这些内容仍有一定概率是真实的，请结合文末的参考资料 URL 自行核对与判断。"
                                         }
                                     ]
                                 }
@@ -126,8 +121,6 @@ class FactCheckerNode:
                 else:
                     new_blocks.append(block)
             else:
-                # 如果当前属于低置信度 Heading 下的内容，则丢弃该 Block
-                if not skip_current_heading:
-                    new_blocks.append(block)
+                new_blocks.append(block)
                 
         chapter["blocks"] = new_blocks

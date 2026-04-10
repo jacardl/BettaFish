@@ -242,7 +242,7 @@ class ChapterGenerationNode(BaseNode):
         chapter_json.setdefault("anchor", section.slug)
         chapter_json.setdefault("title", section.title)
         chapter_json.setdefault("order", section.order)
-        self._sanitize_chapter_blocks(chapter_json)
+        self._sanitize_chapter_blocks(chapter_json, section_outline=[{"title": o} if isinstance(o, str) else o for o in section.outline] if hasattr(section, "outline") and section.outline else None)
 
         valid, errors = self.validator.validate_chapter(chapter_json)
         if not valid and errors:
@@ -257,7 +257,7 @@ class ChapterGenerationNode(BaseNode):
                 chapter_json.setdefault("anchor", section.slug)
                 chapter_json.setdefault("title", section.title)
                 chapter_json.setdefault("order", section.order)
-                self._sanitize_chapter_blocks(chapter_json)
+                self._sanitize_chapter_blocks(chapter_json, section_outline=[{"title": o} if isinstance(o, str) else o for o in section.outline] if hasattr(section, "outline") and section.outline else None)
                 valid, errors = self.validator.validate_chapter(chapter_json)
         content_error: ChapterContentError | None = None
         if valid and not placeholder_created:
@@ -1014,13 +1014,24 @@ class ChapterGenerationNode(BaseNode):
         logger.warning("章节JSON经多次本地修复仍不合规，已成功启用LLM兜底修复")
         return repaired
 
-    def _sanitize_chapter_blocks(self, chapter: Dict[str, Any]):
+    def _sanitize_chapter_blocks(self, chapter: Dict[str, Any], section_outline: Optional[List[Dict[str, Any]]] = None):
         """
-        修正常见的结构性错误（例如list.items嵌套过深）。
+        修正常见的结构性错误（例如list.items嵌套过深），并剔除越权标题。
 
         参数:
             chapter: 章节JSON对象，会在原地被清理和规整。
+            section_outline: 该章节的合法提纲列表，用于剔除越权的 heading 块。
         """
+
+        # 收集所有合法的标题前缀（例如 "4.1"）
+        valid_prefixes = []
+        if section_outline:
+            import re
+            for item in section_outline:
+                title = item.get("title", "")
+                m = re.match(r"^([\d\.]+)", title.strip())
+                if m:
+                    valid_prefixes.append(m.group(1))
 
         def walk(blocks: List[Dict[str, Any]] | None):
             """递归检查并修复嵌套结构，保证每个block合法"""
@@ -1049,6 +1060,22 @@ class ChapterGenerationNode(BaseNode):
                     else:
                         logger.warning(f"walk: 跳过无效的 block（类型: {type(block).__name__}）")
                 else:
+                    # 如果是 heading，校验其是否在合法大纲前缀内
+                    if valid_prefixes and block.get("type") == "heading":
+                        heading_text = block.get("text", "")
+                        import re
+                        m = re.match(r"^([\d\.]+)", heading_text.strip())
+                        if m:
+                            prefix = m.group(1)
+                            if prefix not in valid_prefixes:
+                                logger.warning(f"剔除越权生成的标题 block: {heading_text} (将其降级为加粗段落)")
+                                # 将越权 heading 降级为加粗段落
+                                blocks[idx] = {
+                                    "type": "paragraph",
+                                    "inlines": [
+                                        {"text": heading_text, "marks": [{"type": "bold"}]}
+                                    ]
+                                }
                     valid_indices.append(idx)
 
             for idx in valid_indices:

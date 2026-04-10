@@ -87,7 +87,50 @@ class WordBudgetNode(BaseNode):
             top_p=0.85,
         )
         plan = self._parse_response(response)
-        logger.info("章节字数规划已生成")
+        
+        # 强制后处理：移除任何在原始 template_overview 中不存在的非法新增小节（防幻觉扩展）
+        if plan.get("chapters") and isinstance(plan["chapters"], list):
+            valid_chapters = []
+            for ch in plan["chapters"]:
+                ch_title = ch.get("title", "")
+                ch_id = ch.get("chapterId", "")
+                
+                # 寻找匹配的原始模板章节
+                matched_tpl_sec = None
+                for sec in sections:
+                    if sec.slug == ch_id or sec.title == ch_title:
+                        matched_tpl_sec = sec
+                        break
+                        
+                if matched_tpl_sec and "sections" in ch and isinstance(ch["sections"], list):
+                    import re
+                    valid_sections = []
+                    # 原始大纲的有效子标题前缀列表，例如 ["4.1"]
+                    valid_prefixes = []
+                    for out_item in matched_tpl_sec.outline:
+                        out_title = out_item.get("title", "")
+                        m = re.match(r"^([\d\.]+)", out_title.strip())
+                        if m:
+                            valid_prefixes.append(m.group(1))
+                            
+                    for sub_sec in ch["sections"]:
+                        sub_title = sub_sec.get("title", "")
+                        # 如果子节标题的前缀不在 valid_prefixes 中，说明是 LLM 自己发明的（如 4.2）
+                        m = re.match(r"^([\d\.]+)", sub_title.strip())
+                        if m and valid_prefixes:
+                            prefix = m.group(1)
+                            # 如果前缀不是任何有效前缀的精确匹配，且前缀中有数字（如 4.2 不在 [4.1] 里）
+                            if prefix not in valid_prefixes:
+                                logger.warning(f"剔除越权生成的子章节: {sub_title}")
+                                # 把非法章节的字数目标和重点合并到合法的最后一个章节里
+                                if valid_sections:
+                                    valid_sections[-1]["targetWords"] = valid_sections[-1].get("targetWords", 0) + sub_sec.get("targetWords", 0)
+                                continue
+                        valid_sections.append(sub_sec)
+                    ch["sections"] = valid_sections
+                    
+            logger.info("章节字数规划已生成并完成越权剔除")
+            
         return plan
 
     def _parse_response(self, raw: str) -> Dict[str, Any]:

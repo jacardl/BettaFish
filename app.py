@@ -143,10 +143,10 @@ CONFIG_KEYS = [
     'KEYWORD_OPTIMIZER_API_KEY',
     'KEYWORD_OPTIMIZER_BASE_URL',
     'KEYWORD_OPTIMIZER_MODEL_NAME',
+    'ANSPIRE_API_KEY',
     'TAVILY_API_KEY',
-    'SEARCH_TOOL_TYPE',
-    'BOCHA_WEB_SEARCH_API_KEY',
-    'ANSPIRE_API_KEY'
+    'BOCHA_WEB_API_KEY',
+    'FIRECRAWL_API_KEY'
 ]
 
 
@@ -1197,20 +1197,20 @@ def search():
     # 【新增机制：实时触发增量抓取】
     # 在分配搜索任务给底层 Agent 之前，先利用 Anspire 抓取全网最新 20 条热点并入库，保证时效性
     try:
-        from InsightEngine.utils.data_ingestion import ingest_incremental_anspire_data
+        from InsightEngine.utils.data_ingestion import ingest_all_sources_data
         # 异步启动抓取，不阻塞主流程，并记录到 crawler.log 中
         import threading
         def run_jit_crawler():
             log_file = LOG_DIR / "crawler.log"
             with open(log_file, "a", encoding="utf-8") as f:
                 ts = datetime.now().strftime('%H:%M:%S')
-                f.write(f"[{ts}] [SYSTEM] 🕷️ [大任务联动] 收到系统统一搜索任务，开始自动抓取 '{query}' 相关数据...\n")
+                f.write(f"[{ts}] [SYSTEM] 🕷️ [大任务联动] 收到系统统一搜索任务，开始自动联合抓取 '{query}' 相关数据...\n")
             try:
                 # 捕获 ingest 函数的返回值，以便更详细地记录
-                inserted_count, details = ingest_incremental_anspire_data(query)
+                inserted_count, details = ingest_all_sources_data(query)
                 with open(log_file, "a", encoding="utf-8") as f:
                     ts = datetime.now().strftime('%H:%M:%S')
-                    f.write(f"[{ts}] [SYSTEM] ✅ [大任务联动] 离线爬虫抓取完成！共成功入库 {inserted_count} 条数据。\n")
+                    f.write(f"[{ts}] [SYSTEM] ✅ [大任务联动] 离线多源爬虫抓取完成！共成功入库 {inserted_count} 条数据。\n")
                     if details:
                         f.write(f"[{ts}] [SYSTEM] 📊 数据分布: {details}\n")
             except Exception as e:
@@ -1220,7 +1220,7 @@ def search():
         
         threading.Thread(target=run_jit_crawler, daemon=True).start()
     except Exception as e:
-        logger.error(f"启动增量数据抓取线程失败: {e}")
+        logger.error(f"启动多源增量数据抓取线程失败: {e}")
 
     # 检查哪些应用正在运行
     check_app_status()
@@ -1264,33 +1264,55 @@ def manual_ingest():
     """手动触发原生离线爬虫（写入本地数据库），并将日志打入 crawler.log"""
     data = request.get_json()
     query = data.get('query', '').strip()
+    wait = data.get('wait', False)
     if not query:
         return jsonify({'success': False, 'error': '搜索词不能为空'})
         
     try:
-        import threading
-        def run_ingest():
+        if wait:
+            # 同步阻塞执行
             log_file = LOG_DIR / "crawler.log"
             with open(log_file, "a", encoding="utf-8") as f:
                 ts = datetime.now().strftime('%H:%M:%S')
-                f.write(f"[{ts}] [SYSTEM] 🕷️ 收到离线爬虫任务，开始抓取 '{query}' 相关数据并写入本地数据库...\n")
-            
+                f.write(f"[{ts}] [SYSTEM] 🕷️ [大任务联动] 收到系统统一搜索任务，开始自动联合抓取 '{query}' 相关数据...\n")
             try:
-                from InsightEngine.utils.data_ingestion import ingest_incremental_anspire_data
-                # 捕获 ingest 函数的返回值，以便更详细地记录
-                inserted_count, details = ingest_incremental_anspire_data(query)
+                from InsightEngine.utils.data_ingestion import ingest_all_sources_data
+                inserted_count, details = ingest_all_sources_data(query)
                 with open(log_file, "a", encoding="utf-8") as f:
                     ts = datetime.now().strftime('%H:%M:%S')
-                    f.write(f"[{ts}] [SYSTEM] ✅ 离线爬虫抓取完成！共成功入库 {inserted_count} 条数据。\n")
+                    f.write(f"[{ts}] [SYSTEM] ✅ [大任务联动] 离线多源爬虫抓取完成！共成功入库 {inserted_count} 条数据。\n")
                     if details:
                         f.write(f"[{ts}] [SYSTEM] 📊 数据分布: {details}\n")
+                return jsonify({'success': True, 'message': '已完成离线爬虫抓取'})
             except Exception as e:
                 with open(log_file, "a", encoding="utf-8") as f:
                     ts = datetime.now().strftime('%H:%M:%S')
-                    f.write(f"[{ts}] [ERROR] ❌ 离线爬虫抓取失败: {str(e)}\n")
-                    
-        threading.Thread(target=run_ingest, daemon=True).start()
-        return jsonify({'success': True, 'message': '已启动离线爬虫'})
+                    f.write(f"[{ts}] [ERROR] ❌ [大任务联动] 离线爬虫抓取失败: {str(e)}\n")
+                return jsonify({'success': False, 'error': str(e)})
+        else:
+            # 异步非阻塞执行
+            import threading
+            def run_ingest():
+                log_file = LOG_DIR / "crawler.log"
+                with open(log_file, "a", encoding="utf-8") as f:
+                    ts = datetime.now().strftime('%H:%M:%S')
+                    f.write(f"[{ts}] [SYSTEM] 🕷️ 收到离线爬虫任务，开始抓取 '{query}' 相关数据并写入本地数据库...\n")
+                
+                try:
+                    from InsightEngine.utils.data_ingestion import ingest_all_sources_data
+                    inserted_count, details = ingest_all_sources_data(query)
+                    with open(log_file, "a", encoding="utf-8") as f:
+                        ts = datetime.now().strftime('%H:%M:%S')
+                        f.write(f"[{ts}] [SYSTEM] ✅ 离线多源爬虫抓取完成！共成功入库 {inserted_count} 条数据。\n")
+                        if details:
+                            f.write(f"[{ts}] [SYSTEM] 📊 数据分布: {details}\n")
+                except Exception as e:
+                    with open(log_file, "a", encoding="utf-8") as f:
+                        ts = datetime.now().strftime('%H:%M:%S')
+                        f.write(f"[{ts}] [ERROR] ❌ 离线爬虫抓取失败: {str(e)}\n")
+                        
+            threading.Thread(target=run_ingest, daemon=True).start()
+            return jsonify({'success': True, 'message': '已启动离线爬虫'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
