@@ -1159,15 +1159,24 @@ def generate_report():
         custom_template = data.get('custom_template', '')
         seed_id = data.get('seed_id', '')
         
-        # 精简任务ID生成逻辑：短名称+年月日+短编码
-        # 取 query 的前4个字符作为短名称（过滤特殊字符）
+        # 精简任务ID生成逻辑：6个汉字 + 6个日期数字 + 4个随机数字
         import re
         import random
         import string
-        short_name = re.sub(r'[^\w\u4e00-\u9fa5]', '', query)[:4] or 'task'
-        date_str = datetime.now().strftime('%Y%m%d')
-        short_code = ''.join(random.choices(string.ascii_lowercase + string.digits, k=4))
-        default_task_id = f"{short_name}_{date_str}_{short_code}"
+        
+        # 提取汉字，不足6个用默认汉字补齐
+        chinese_chars = re.sub(r'[^\u4e00-\u9fa5]', '', query)
+        if len(chinese_chars) < 6:
+            chinese_chars += '舆情分析研究报告'
+        short_name = chinese_chars[:6]
+        
+        # 6个日期数字: YYMMDD
+        date_str = datetime.now().strftime('%y%m%d')
+        
+        # 4个随机数字
+        short_code = ''.join(random.choices(string.digits, k=4))
+        
+        default_task_id = f"{short_name}{date_str}{short_code}"
         
         task_id = data.get('task_id') or default_task_id
 

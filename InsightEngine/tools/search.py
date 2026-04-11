@@ -28,7 +28,7 @@ import json
 import requests
 from loguru import logger
 import asyncio
-from typing import List, Dict, Any, Optional, Literal
+from typing import List, Dict, Any, Optional, Literal, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, date
 from InsightEngine.utils.config import settings
@@ -119,9 +119,7 @@ class MediaCrawlerDB:
 
     def _build_keyword_conditions(self, topic: str, columns: List[str]) -> Tuple[str, dict]:
         """
-        将用户的搜索词拆分为多个关键词，并构建 AND 模糊匹配条件。
-        例如: topic="A B", columns=["title", "content"]
-        返回: "( (title LIKE :kw_0 OR content LIKE :kw_0) AND (title LIKE :kw_1 OR content LIKE :kw_1) )" 和 params
+        (不再使用纯 LIKE 模糊匹配，保留此函数以防其他地方调用)
         """
         keywords = [k.strip() for k in topic.replace('+', ' ').split() if k.strip()][:5]
         if not keywords:
@@ -136,6 +134,24 @@ class MediaCrawlerDB:
             conditions.append("(" + " OR ".join(col_conds) + ")")
             
         return " AND ".join(conditions), params
+        
+    def _build_vector_conditions(self, topic: str) -> Tuple[str, dict]:
+        """
+        使用本地 Embedding 进行向量相似度匹配。
+        返回: SQL 排序/计算片段 和 params (包含 query_vector 字符串)
+        """
+        from utils.embedding import get_embedding
+        try:
+            emb = get_embedding(topic)
+            emb_str = f"[{','.join(map(str, emb))}]"
+            # Postgres pgvector: `<=>` represents cosine distance. We want cosine similarity, which is 1 - distance.
+            # But for ORDER BY, distance ASC is exactly what we want (smaller distance = more similar).
+            # If embedding is null, distance will be null.
+            order_sql = "embedding <=> :query_vector"
+            return order_sql, {"query_vector": emb_str}
+        except Exception as e:
+            logger.error(f"Generate embedding for query failed: {e}")
+            return "1", {} # fallback
 
     def search_hot_content(
         self,
@@ -194,20 +210,30 @@ class MediaCrawlerDB:
         
         all_results = []
         for platform, (tb_name, col_time, cols, extra_cond) in table_config.items():
-            cond_sql, params = self._build_keyword_conditions(topic, cols)
+            order_sql, params = self._build_vector_conditions(topic)
             params["limit"] = limit_per_table
             
-            if extra_cond:
-                sql = f"SELECT * FROM {tb_name} WHERE {extra_cond} AND ({cond_sql}) ORDER BY {col_time} DESC LIMIT :limit"
+            # 使用 embedding IS NOT NULL 来确保我们只搜索已向量化的数据，或者你可以退回到 LIKE
+            if "query_vector" in params:
+                cond_sql = f"embedding IS NOT NULL"
+                order_clause = f"{order_sql} ASC"
             else:
-                sql = f"SELECT * FROM {tb_name} WHERE {cond_sql} ORDER BY {col_time} DESC LIMIT :limit"
+                # 降级处理
+                cond_sql, fallback_params = self._build_keyword_conditions(topic, cols)
+                params.update(fallback_params)
+                order_clause = f"{col_time} DESC"
+            
+            if extra_cond:
+                sql = f"SELECT * FROM {tb_name} WHERE {extra_cond} AND ({cond_sql}) ORDER BY {order_clause} LIMIT :limit"
+            else:
+                sql = f"SELECT * FROM {tb_name} WHERE {cond_sql} ORDER BY {order_clause} LIMIT :limit"
                 
             rows = self._safe_query(sql, params)
             for r in rows:
                 title = r.get('title', '')
                 content = r.get('desc', '') or r.get('content_text', '') or r.get('description', '') or r.get('content', '')
-                time_val = r.get('time') or r.get('created_time') or r.get('add_ts')
-                url = r.get('note_url') or r.get('video_url') or r.get('content_url') or r.get('url')
+                time_val = r.get('time') or r.get('created_time') or r.get('add_ts') or r.get('create_time')
+                url = r.get('note_url') or r.get('video_url') or r.get('content_url') or r.get('aweme_url') or r.get('url')
                 
                 # 提取额外格式数据
                 extra_info_str = r.get('extra_info', '')
@@ -258,12 +284,20 @@ class MediaCrawlerDB:
         
         all_results = []
         for platform, (tb_name, col_time, cols) in table_config.items():
-            cond_sql, params = self._build_keyword_conditions(topic, cols)
+            order_sql, params = self._build_vector_conditions(topic)
             params["start_ts"] = start_ts
             params["end_ts"] = end_ts
             params["limit"] = limit_per_table
             
-            sql = f"SELECT *, extra_info FROM {tb_name} WHERE ({cond_sql}) AND {col_time} >= :start_ts AND {col_time} <= :end_ts ORDER BY {col_time} DESC LIMIT :limit"
+            if "query_vector" in params:
+                cond_sql = f"embedding IS NOT NULL"
+                order_clause = f"{order_sql} ASC"
+            else:
+                cond_sql, fallback_params = self._build_keyword_conditions(topic, cols)
+                params.update(fallback_params)
+                order_clause = f"{col_time} DESC"
+            
+            sql = f"SELECT *, extra_info FROM {tb_name} WHERE ({cond_sql}) AND {col_time} >= :start_ts AND {col_time} <= :end_ts ORDER BY {order_clause} LIMIT :limit"
             
             rows = self._safe_query(sql, params)
             for r in rows:
@@ -288,7 +322,7 @@ class MediaCrawlerDB:
                     platform=platform,
                     content_type="news",
                     title_or_content=f"{title} - {content}",
-                    url=r.get('note_url') or r.get('video_url') or r.get('content_url'),
+                    url=r.get('note_url') or r.get('video_url') or r.get('content_url') or r.get('aweme_url') or r.get('url'),
                     publish_time=self._parse_timestamp(time_val),
                     source_keyword=topic,
                     source_table=f"{platform}_table"
@@ -314,9 +348,18 @@ class MediaCrawlerDB:
         
         formatted = []
         for platform, (tb_name, col_time) in table_config.items():
-            cond_sql, params = self._build_keyword_conditions(topic, ["content"])
+            order_sql, params = self._build_vector_conditions(topic)
             params["limit"] = limit
-            sql = f"SELECT content, {col_time} as time, nickname FROM {tb_name} WHERE {cond_sql} LIMIT :limit"
+            
+            if "query_vector" in params:
+                cond_sql = f"embedding IS NOT NULL"
+                order_clause = f"{order_sql} ASC"
+            else:
+                cond_sql, fallback_params = self._build_keyword_conditions(topic, ["content"])
+                params.update(fallback_params)
+                order_clause = f"{col_time} DESC"
+                
+            sql = f"SELECT content, {col_time} as time, nickname FROM {tb_name} WHERE {cond_sql} ORDER BY {order_clause} LIMIT :limit"
             # 兼容知乎贴吧字段名
             if platform in ["zhihu", "tieba"]:
                 sql = sql.replace("nickname", "user_nickname as nickname")
@@ -362,9 +405,18 @@ class MediaCrawlerDB:
             return DBResponse("search_topic_on_platform", params_for_log, error_message=f"不支持的平台: {platform}")
 
         tb_name, col_title, col_desc, col_time = table_map[platform]
-        cond_sql, params = self._build_keyword_conditions(topic, [col_title, f'"{col_desc}"'])
+        
+        order_sql, params = self._build_vector_conditions(topic)
         params["limit"] = limit
         
+        if "query_vector" in params:
+            cond_sql = f"embedding IS NOT NULL"
+            order_clause = f"{order_sql} ASC"
+        else:
+            cond_sql, fallback_params = self._build_keyword_conditions(topic, [col_title, f'"{col_desc}"'])
+            params.update(fallback_params)
+            order_clause = f"{col_time} DESC"
+            
         # 构建时间过滤
         time_filter = ""
         if start_date and end_date:
@@ -377,7 +429,7 @@ class MediaCrawlerDB:
             except Exception:
                 pass
                 
-        sql = f"SELECT * FROM {tb_name} WHERE ({cond_sql}) {time_filter} ORDER BY {col_time} DESC LIMIT :limit"
+        sql = f"SELECT * FROM {tb_name} WHERE ({cond_sql}) {time_filter} ORDER BY {order_clause} LIMIT :limit"
         
         rows = self._safe_query(sql, params)
         
@@ -390,7 +442,7 @@ class MediaCrawlerDB:
                 platform=platform,
                 content_type="news",
                 title_or_content=f"{title} - {content}",
-                url=r.get('note_url') or r.get('video_url') or r.get('content_url'),
+                url=r.get('note_url') or r.get('video_url') or r.get('content_url') or r.get('aweme_url') or r.get('url'),
                 publish_time=self._parse_timestamp(r.get(col_time)),
                 source_keyword=topic,
                 source_table=tb_name

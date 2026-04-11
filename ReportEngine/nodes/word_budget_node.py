@@ -108,13 +108,20 @@ class WordBudgetNode(BaseNode):
                     # 原始大纲的有效子标题前缀列表，例如 ["4.1"]
                     valid_prefixes = []
                     for out_item in matched_tpl_sec.outline:
-                        out_title = out_item.get("title", "")
+                        if isinstance(out_item, dict):
+                            out_title = out_item.get("title", "")
+                        else:
+                            out_title = str(out_item)
                         m = re.match(r"^([\d\.]+)", out_title.strip())
                         if m:
                             valid_prefixes.append(m.group(1))
                             
                     for sub_sec in ch["sections"]:
-                        sub_title = sub_sec.get("title", "")
+                        if isinstance(sub_sec, dict):
+                            sub_title = sub_sec.get("title", "")
+                        else:
+                            sub_title = str(sub_sec)
+                            sub_sec = {"title": sub_title}
                         # 如果子节标题的前缀不在 valid_prefixes 中，说明是 LLM 自己发明的（如 4.2）
                         m = re.match(r"^([\d\.]+)", sub_title.strip())
                         if m and valid_prefixes:

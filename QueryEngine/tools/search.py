@@ -16,7 +16,7 @@ import os
 import sys
 import datetime
 import asyncio
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
 # 添加utils目录到Python路径
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -80,7 +80,7 @@ class TavilyNewsAgency:
 
     def _build_keyword_conditions(self, topic: str, columns: List[str]) -> Tuple[str, dict]:
         """
-        将用户的搜索词拆分为多个关键词，并构建 AND 模糊匹配条件。
+        (不再使用纯 LIKE 模糊匹配，保留此函数以防其他地方调用)
         """
         keywords = [k.strip() for k in topic.replace('+', ' ').split() if k.strip()][:5]
         if not keywords:
@@ -95,6 +95,21 @@ class TavilyNewsAgency:
             conditions.append("(" + " OR ".join(col_conds) + ")")
             
         return " AND ".join(conditions), params
+
+    def _build_vector_conditions(self, topic: str) -> Tuple[str, dict]:
+        """
+        使用本地 Embedding 进行向量相似度匹配。
+        返回: SQL 排序/计算片段 和 params (包含 query_vector 字符串)
+        """
+        from utils.embedding import get_embedding
+        try:
+            emb = get_embedding(topic)
+            emb_str = f"[{','.join(map(str, emb))}]"
+            order_sql = "embedding <=> :query_vector"
+            return order_sql, {"query_vector": emb_str}
+        except Exception as e:
+            logger.error(f"Generate embedding for query failed: {e}")
+            return "1", {} # fallback
 
     def _parse_timestamp(self, ts) -> str:
         """将毫秒时间戳转换为 YYYY-MM-DD HH:MM:SS 格式"""
@@ -132,19 +147,39 @@ class TavilyNewsAgency:
             tasks = []
             platform_order = []
             for platform, (tb_name, col_time, cols, extra_cond) in table_config.items():
-                cond_sql, params = self._build_keyword_conditions(query, cols)
+                order_sql, params = self._build_vector_conditions(query)
                 params.update(time_params)
                 params["limit"] = limit
                 
+                if "query_vector" in params:
+                    cond_sql = f"embedding IS NOT NULL"
+                    order_clause = f"{order_sql} ASC"
+                else:
+                    cond_sql, fallback_params = self._build_keyword_conditions(query, cols)
+                    params.update(fallback_params)
+                    order_clause = f"{col_time} DESC"
+                
+                if platform == 'seed':
+                    url_col = 'url'
+                elif platform in ('xhs', 'tieba', 'weibo'):
+                    url_col = 'note_url'
+                elif platform == 'bilibili':
+                    url_col = 'video_url'
+                elif platform == 'douyin':
+                    url_col = 'aweme_url'
+                elif platform == 'zhihu':
+                    url_col = 'content_url'
+                else:
+                    url_col = 'url'
+
                 if extra_cond:
-                    sql = f"SELECT title, {cols[-1]} as content, {col_time} as time, {'url' if platform == 'seed' else 'note_url' if platform in ('xhs', 'tieba', 'weibo') else 'video_url' if platform in ('bilibili', 'douyin') else 'url'} as url, extra_info FROM {tb_name} WHERE {extra_cond} AND ({cond_sql}){time_filter.format(time_col=col_time)} ORDER BY {col_time} DESC LIMIT :limit"
+                    sql = f"SELECT title, {cols[-1]} as content, {col_time} as time, {url_col} as url, extra_info FROM {tb_name} WHERE {extra_cond} AND ({cond_sql}){time_filter.format(time_col=col_time)} ORDER BY {order_clause} LIMIT :limit"
                 else:
                     # Weibo has no title column
                     if platform == "weibo":
-                        sql = f"SELECT '' as title, content, {col_time} as time, note_url as url, extra_info FROM {tb_name} WHERE ({cond_sql}){time_filter.format(time_col=col_time)} ORDER BY {col_time} DESC LIMIT :limit"
+                        sql = f"SELECT '' as title, content, {col_time} as time, {url_col} as url, extra_info FROM {tb_name} WHERE ({cond_sql}){time_filter.format(time_col=col_time)} ORDER BY {order_clause} LIMIT :limit"
                     else:
-                        url_col = 'url' if platform in ('zhihu',) else 'note_url' if platform in ('xhs', 'tieba') else 'video_url' if platform in ('bilibili', 'douyin') else 'url'
-                        sql = f"SELECT title, {cols[-1]} as content, {col_time} as time, {url_col} as url, extra_info FROM {tb_name} WHERE ({cond_sql}){time_filter.format(time_col=col_time)} ORDER BY {col_time} DESC LIMIT :limit"
+                        sql = f"SELECT title, {cols[-1]} as content, {col_time} as time, {url_col} as url, extra_info FROM {tb_name} WHERE ({cond_sql}){time_filter.format(time_col=col_time)} ORDER BY {order_clause} LIMIT :limit"
                 
                 tasks.append(fetch_all(sql, params))
                 platform_order.append(platform)

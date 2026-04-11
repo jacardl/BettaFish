@@ -46,22 +46,101 @@ def ingest_seed_data(seed_id: str):
     if not seed_text:
         return
         
-    # Split text into chunks to simulate multiple crawled documents
-    chunk_size = 5000
-    chunks = [seed_text[i:i+chunk_size] for i in range(0, len(seed_text), chunk_size)]
+    # 高级语义切片：基于段落和句子的重叠切片 (Overlap Chunking)
+    import re
+    
+    def smart_chunking(text: str, max_chunk_len: int = 1000, overlap: int = 150) -> list:
+        # 1. 先按段落切分
+        paragraphs = re.split(r'\n\s*\n', text)
+        
+        chunks = []
+        current_chunk = ""
+        
+        for p in paragraphs:
+            p = p.strip()
+            if not p:
+                continue
+                
+            # 如果加上这个段落还没超长，就加上去
+            if len(current_chunk) + len(p) + 2 <= max_chunk_len:
+                current_chunk += ("\n\n" if current_chunk else "") + p
+            else:
+                # 已经有一个足够大的 chunk，先保存
+                if current_chunk:
+                    chunks.append(current_chunk)
+                    
+                    # 提取 overlap 作为下一个 chunk 的开头
+                    # 尽量从标点符号处切分 overlap
+                    overlap_text = current_chunk[-overlap:]
+                    match = re.search(r'[。！？.!?\n]', overlap_text)
+                    if match:
+                        overlap_start = match.end()
+                        current_chunk = overlap_text[overlap_start:].strip()
+                    else:
+                        current_chunk = overlap_text.strip()
+                
+                # 如果单个段落特别长（超过 max_chunk_len），按句子强行切分
+                if len(p) > max_chunk_len:
+                    sentences = re.split(r'([。！？.!?])', p)
+                    
+                    temp_sent = current_chunk
+                    for i in range(0, len(sentences) - 1, 2):
+                        sentence = sentences[i] + (sentences[i+1] if i+1 < len(sentences) else "")
+                        if len(temp_sent) + len(sentence) > max_chunk_len and temp_sent:
+                            chunks.append(temp_sent)
+                            
+                            overlap_text = temp_sent[-overlap:]
+                            match = re.search(r'[。！？.!?\n]', overlap_text)
+                            if match:
+                                temp_sent = overlap_text[match.end():].strip() + " " + sentence
+                            else:
+                                temp_sent = overlap_text.strip() + " " + sentence
+                        else:
+                            temp_sent += (" " if temp_sent else "") + sentence
+                    
+                    current_chunk = temp_sent
+                else:
+                    current_chunk += ("\n\n" if current_chunk else "") + p
+                    
+        if current_chunk:
+            chunks.append(current_chunk)
+            
+        return chunks if chunks else [text]
+        
+    # 调用智能切片，理想块大小为800字，重叠100字
+    chunks = smart_chunking(seed_text, max_chunk_len=800, overlap=100)
     
     now_ts = int(datetime.now().timestamp() * 1000)
     crawl_date = datetime.now().date()
     
+    from utils.embedding import get_embeddings
+    
+    # 批量计算 Embedding 以极大提升速度
+    texts_to_embed = [f"{title}_片段{idx+1} {chunk}" for idx, chunk in enumerate(chunks)]
+    try:
+        embeddings = get_embeddings(texts_to_embed)
+    except Exception as e:
+        logger.error(f"Batch calculate embedding failed: {e}")
+        embeddings = [None] * len(chunks)
+    
     sql = """
-        INSERT INTO daily_news (news_id, source_platform, title, description, url, crawl_date, add_ts, last_modify_ts, rank_position)
-        VALUES (:nid, :platform, :title, :desc, :url, :cdate, :add_ts, :add_ts, 1)
+        INSERT INTO daily_news (news_id, source_platform, title, description, url, crawl_date, add_ts, last_modify_ts, rank_position, embedding)
+        VALUES (:nid, :platform, :title, :desc, :url, :cdate, :add_ts, :add_ts, 1, :emb)
     """
     
     inserted_count = 0
+    all_params = []
+    from InsightEngine.utils.db import execute_write_many
+    
     for idx, chunk in enumerate(chunks):
         chunk_title = f"{title}_片段{idx+1}"
         news_id = f"seed_{seed_id[:8]}_{now_ts}_{idx}"
+        
+        emb = embeddings[idx]
+        if emb:
+            emb_str = f"[{','.join(map(str, emb))}]"
+        else:
+            emb_str = None
         
         params = {
             "nid": news_id,
@@ -70,26 +149,28 @@ def ingest_seed_data(seed_id: str):
             "desc": chunk,
             "url": url,
             "cdate": crawl_date,
-            "add_ts": now_ts + idx  # 保证时间戳唯一性
+            "add_ts": now_ts + idx,  # 保证时间戳唯一性
+            "emb": emb_str
         }
+        all_params.append(params)
         
-        try:
-            _run_async(execute_write(sql, params))
-            inserted_count += 1
-            
-            # 单条记录逐一写入 crawler.log
-            log_file = root_dir / "logs" / "crawler.log"
-            if log_file.parent.exists():
-                with open(log_file, "a", encoding="utf-8") as f:
-                    ts_str = datetime.now().strftime('%H:%M:%S')
-                    short_title = chunk_title[:40] + '...' if len(chunk_title) > 40 else chunk_title
-                    f.write(f"[{ts_str}] [RECORD] � 成功插入 [seed] -> [seed_document] {short_title}\n")
-                    
-        except Exception as e:
-            logger.error(f"❌ 插入 Seed 数据分片 {idx+1} 失败: {e}")
-        finally:
-            import InsightEngine.utils.db as db_utils
-            db_utils._engine = None  # Prevent event loop reuse issues
+        # 单条记录逐一写入 crawler.log
+        log_file = root_dir / "logs" / "crawler.log"
+        if log_file.parent.exists():
+            with open(log_file, "a", encoding="utf-8") as f:
+                ts_str = datetime.now().strftime('%H:%M:%S')
+                short_title = chunk_title[:40] + '...' if len(chunk_title) > 40 else chunk_title
+                f.write(f"[{ts_str}] [RECORD] 📝 成功插入 [seed] -> [seed_document] {short_title}\n")
+                
+    try:
+        if all_params:
+            _run_async(execute_write_many(sql, all_params))
+            inserted_count = len(all_params)
+    except Exception as e:
+        logger.error(f"❌ 批量插入 Seed 数据分片失败: {e}")
+    finally:
+        import InsightEngine.utils.db as db_utils
+        db_utils._engine = None  # Prevent event loop reuse issues
             
     logger.info(f"✅ Seed 文件 ({seed_id}) 已拆分为 {len(chunks)} 个片段并持久化至 daily_news 表, 成功插入 {inserted_count} 条")
     
@@ -106,10 +187,31 @@ def _insert_results_into_db(results, now_ts, source_name):
     inserted_count = 0
     platform_stats = {"bilibili": 0, "xiaohongshu": 0, "douyin": 0, "weibo": 0, "web_news": 0}
     
+    from utils.embedding import get_embeddings
+    
+    # 提取所有文本准备进行批量向量化
+    texts_to_embed = []
     for r in results:
+        title = r.get("title", "") or ""
+        content = r.get("content", "") or r.get("snippet", "") or r.get("raw_content", "") or ""
+        texts_to_embed.append(title + " " + content)
+        
+    try:
+        embeddings = get_embeddings(texts_to_embed)
+    except Exception as e:
+        logger.error(f"Batch calculate embedding failed: {e}")
+        embeddings = [None] * len(results)
+    
+    from InsightEngine.utils.db import execute_write_many
+    
+    # Collect statements and params by table/sql
+    sql_batches = {}
+    platform_keys = []
+    
+    for idx, r in enumerate(results):
         url = r.get("url", "")
-        title = r.get("title", "")
-        content = r.get("content", "") or r.get("snippet", "") or r.get("raw_content", "")
+        title = r.get("title", "") or ""
+        content = r.get("content", "") or r.get("snippet", "") or r.get("raw_content", "") or ""
         date_str = r.get("date") or r.get("published_date") or r.get("time")
         
         # 解析时间戳
@@ -133,59 +235,68 @@ def _insert_results_into_db(results, now_ts, source_name):
         import json
         extra_info_str = json.dumps(r, ensure_ascii=False)
         
+        emb = embeddings[idx]
+        if emb:
+            emb_str = f"[{','.join(map(str, emb))}]"
+        else:
+            emb_str = None
+        
         if "bilibili.com" in url:
             import hashlib
             video_id = f"{source_name}_" + hashlib.md5(url.encode()).hexdigest()[:16]
-            sql = "INSERT INTO bilibili_video (title, \"desc\", video_id, video_url, create_time, nickname, extra_info) VALUES (:t, :d, :vid, :u, :ts, :a, :ei)"
-            params = {"t": title, "d": content, "vid": video_id, "u": url, "ts": ts, "a": "B站用户", "ei": extra_info_str}
+            sql = "INSERT INTO bilibili_video (title, \"desc\", video_id, video_url, create_time, nickname, extra_info, embedding) VALUES (:t, :d, :vid, :u, :ts, :a, :ei, :emb)"
+            params = {"t": title, "d": content, "vid": video_id, "u": url, "ts": ts, "a": "B站用户", "ei": extra_info_str, "emb": emb_str}
             platform_key = "bilibili"
         elif "xiaohongshu.com" in url:
-            sql = "INSERT INTO xhs_note (title, \"desc\", note_url, time, nickname, extra_info) VALUES (:t, :d, :u, :ts, :a, :ei)"
-            params = {"t": title, "d": content, "u": url, "ts": ts, "a": "小红书用户", "ei": extra_info_str}
+            sql = "INSERT INTO xhs_note (title, \"desc\", note_url, time, nickname, extra_info, embedding) VALUES (:t, :d, :u, :ts, :a, :ei, :emb)"
+            params = {"t": title, "d": content, "u": url, "ts": ts, "a": "小红书用户", "ei": extra_info_str, "emb": emb_str}
             platform_key = "xiaohongshu"
         elif "douyin.com" in url:
-            sql = "INSERT INTO douyin_aweme (title, \"desc\", aweme_url, create_time, nickname, extra_info) VALUES (:t, :d, :u, :ts, :a, :ei)"
-            params = {"t": title, "d": content, "u": url, "ts": ts, "a": "抖音用户", "ei": extra_info_str}
+            sql = "INSERT INTO douyin_aweme (title, \"desc\", aweme_url, create_time, nickname, extra_info, embedding) VALUES (:t, :d, :u, :ts, :a, :ei, :emb)"
+            params = {"t": title, "d": content, "u": url, "ts": ts, "a": "抖音用户", "ei": extra_info_str, "emb": emb_str}
             platform_key = "douyin"
         elif "weibo.com" in url:
-            sql = "INSERT INTO weibo_note (content, note_url, create_time, nickname, extra_info) VALUES (:d, :u, :ts, :a, :ei)"
-            params = {"d": content, "u": url, "ts": ts, "a": "微博用户", "ei": extra_info_str}
+            sql = "INSERT INTO weibo_note (content, note_url, create_time, nickname, extra_info, embedding) VALUES (:d, :u, :ts, :a, :ei, :emb)"
+            params = {"d": content, "u": url, "ts": ts, "a": "微博用户", "ei": extra_info_str, "emb": emb_str}
             platform_key = "weibo"
         else:
             import hashlib
             news_id = f"{source_name}_" + hashlib.md5(url.encode()).hexdigest()[:16]
             crawl_date = datetime.now().date()
             # 其他全部入每日热点表，标记平台为 web
-            sql = "INSERT INTO daily_news (news_id, source_platform, title, description, url, crawl_date, add_ts, last_modify_ts, rank_position, extra_info) VALUES (:nid, 'web', :t, :d, :u, :cdate, :ts, :ts, 99, :ei)"
-            params = {"nid": news_id, "t": title, "d": content, "u": url, "cdate": crawl_date, "ts": ts, "ei": extra_info_str}
+            sql = "INSERT INTO daily_news (news_id, source_platform, title, description, url, crawl_date, add_ts, last_modify_ts, rank_position, extra_info, embedding) VALUES (:nid, 'web', :t, :d, :u, :cdate, :ts, :ts, 99, :ei, :emb)"
+            params = {"nid": news_id, "t": title, "d": content, "u": url, "cdate": crawl_date, "ts": ts, "ei": extra_info_str, "emb": emb_str}
             platform_key = "web_news"
             
-        try:
-            _run_async(execute_write(sql, params))
-            inserted_count += 1
-            platform_stats[platform_key] += 1
+        if sql not in sql_batches:
+            sql_batches[sql] = []
+        sql_batches[sql].append(params)
+        
+        platform_stats[platform_key] += 1
+        platform_keys.append((platform_key, title, content))
+
+    try:
+        # 执行批量插入
+        for sql, params_list in sql_batches.items():
+            _run_async(execute_write_many(sql, params_list))
+            inserted_count += len(params_list)
             
-            # 单条记录逐一写入 crawler.log
-            try:
-                log_file = Path("logs/crawler.log")
-                if log_file.parent.exists():
-                    with open(log_file, "a", encoding="utf-8") as f:
-                        ts_str = datetime.now().strftime('%H:%M:%S')
-                        short_title = title[:30] + '...' if len(title) > 30 else title
-                        if not short_title:
-                            short_title = content[:30] + '...' if len(content) > 30 else content
-                        f.write(f"[{ts_str}] [RECORD] 📝 成功插入 [{source_name}] -> [{platform_key}] {short_title}\n")
-            except Exception:
-                pass
-                
-        except Exception as e:
-            # 表可能不存在或主键冲突，静默忽略
-            logger.debug(f"插入数据失败: {e}")
-            pass
-        finally:
-            import InsightEngine.utils.db as db_utils
-            db_utils._engine = None  # Prevent event loop reuse issues
-            
+        # 批量写日志
+        log_file = Path("logs/crawler.log")
+        if log_file.parent.exists():
+            with open(log_file, "a", encoding="utf-8") as f:
+                for platform_key, title, content in platform_keys:
+                    ts_str = datetime.now().strftime('%H:%M:%S')
+                    short_title = title[:30] + '...' if len(title) > 30 else title
+                    if not short_title:
+                        short_title = content[:30] + '...' if len(content) > 30 else content
+                    f.write(f"[{ts_str}] [RECORD] 📝 成功插入 [{source_name}] -> [{platform_key}] {short_title}\n")
+    except Exception as e:
+        logger.error(f"❌ 批量插入数据失败: {e}")
+    finally:
+        import InsightEngine.utils.db as db_utils
+        db_utils._engine = None
+
     details = ", ".join([f"{k}: {v}条" for k, v in platform_stats.items() if v > 0])
     return inserted_count, details
 

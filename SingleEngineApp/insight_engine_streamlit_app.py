@@ -78,6 +78,11 @@ def main():
     # 如果有自动查询，使用它作为默认值
     query = auto_query
 
+    # 恢复 session_state 中的报告（如果页面重绘）
+    if 'final_report' in st.session_state and 'agent' in st.session_state:
+        display_results(st.session_state.agent, st.session_state.final_report)
+        return
+
     # 自动搜索逻辑
     start_research = False
 

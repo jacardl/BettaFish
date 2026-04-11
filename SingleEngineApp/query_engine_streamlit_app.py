@@ -78,6 +78,11 @@ def main():
     # 移除查询输入框，只保留底层逻辑
     query = auto_query
 
+    # 恢复 session_state 中的报告（如果页面重绘）
+    if 'final_report' in st.session_state and 'agent' in st.session_state:
+        display_results(st.session_state.agent, st.session_state.final_report)
+        return
+
     # 自动搜索逻辑
     start_research = False
 
@@ -166,6 +171,9 @@ def execute_research(query: str, config: Settings, task_id: str = "", seed_id: s
         progress_bar.progress(100)
 
         status_text.text("研究完成！")
+        
+        # 将结果存入 session_state 防止页面刷新或重绘时丢失
+        st.session_state.final_report = final_report
 
         # 显示结果
         display_results(agent, final_report)

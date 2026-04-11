@@ -20,6 +20,7 @@ __all__ = [
     "get_async_engine",
     "fetch_all",
     "execute_write",
+    "execute_write_many",
     "_run_async"
 ]
 
@@ -99,6 +100,17 @@ async def execute_write(query: str, params: Optional[Union[Iterable[Any], Dict[s
     engine: AsyncEngine = get_async_engine()
     async with engine.begin() as conn:
         result = await conn.execute(text(query), params or {})
+        return result.rowcount
+
+async def execute_write_many(query: str, params: List[Dict[str, Any]]) -> int:
+    """
+    批量执行写操作（INSERT/UPDATE/DELETE）以极大提升性能。
+    """
+    if not params:
+        return 0
+    engine: AsyncEngine = get_async_engine()
+    async with engine.begin() as conn:
+        result = await conn.execute(text(query), params)
         return result.rowcount
 
 

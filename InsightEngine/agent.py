@@ -305,14 +305,19 @@ class DeepSearchAgent:
                     )
                     limit = max(limit, 30)
                     if not platform:
-                        raise ValueError("search_topic_on_platform工具需要platform参数")
-                    response = self.search_agency.search_topic_on_platform(
-                        platform=platform,
-                        topic=keyword,
-                        start_date=start_date,
-                        end_date=end_date,
-                        limit=limit,
-                    )
+                        # Fallback to global search if platform is missing
+                        logger.warning("search_topic_on_platform工具缺少platform参数，降级为全局搜索")
+                        response = self.search_agency.search_topic_globally(
+                            topic=keyword, limit_per_table=limit
+                        )
+                    else:
+                        response = self.search_agency.search_topic_on_platform(
+                            platform=platform,
+                            topic=keyword,
+                            start_date=start_date,
+                            end_date=end_date,
+                            limit=limit,
+                        )
                 else:
                     logger.info(f"    未知的搜索工具: {tool_name}，使用默认全局搜索")
                     response = self.search_agency.search_topic_globally(
