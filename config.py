@@ -79,20 +79,28 @@ class Settings(BaseSettings):
     # ================== 网络工具配置 ====================
     # Tavily API（申请地址：https://www.tavily.com/）
     TAVILY_API_KEY: Optional[str] = Field(None, description="Tavily API（申请地址：https://www.tavily.com/）API密钥，用于Tavily网络搜索")
-
-    # Bocha API（申请地址：https://open.bochaai.com/）
-    BOCHA_BASE_URL: Optional[str] = Field("https://api.bocha.cn/v1/web-search", description="Bocha AI 搜索BaseUrl或博查网页搜索BaseUrl")
-    BOCHA_WEB_API_KEY: Optional[str] = Field(None, description="Bocha API（申请地址：https://open.bochaai.com/）API密钥，用于Bocha搜索")
+    ENABLE_TAVILY: bool = Field(True, description="是否启用 Tavily 爬虫工具")
 
     # Anspire AI Search API（申请地址：https://open.anspire.cn/?share_code=3E1FUOUH）
     ANSPIRE_BASE_URL: Optional[str] = Field("https://plugin.anspire.cn/api/ntsearch/search", description="Anspire AI 搜索BaseUrl")
     ANSPIRE_PRO_BASE_URL: Optional[str] = Field("https://plugin.anspire.cn/api/ntsearch/prosearch", description="Anspire AI 高级搜索BaseUrl")
     ANSPIRE_USE_PRO: bool = Field(True, description="是否使用 Anspire Pro 接口")
     ANSPIRE_API_KEY: Optional[str] = Field(None, description="Anspire AI Search API（申请地址：https://open.anspire.cn/?share_code=3E1FUOUH）API密钥，用于Anspire搜索")
+    ENABLE_ANSPIRE: bool = Field(True, description="是否启用 Anspire 爬虫工具")
+
+    # Bocha API（申请地址：https://open.bochaai.com/）
+    BOCHA_BASE_URL: Optional[str] = Field("https://api.bocha.cn/v1/web-search", description="Bocha AI 搜索BaseUrl或博查网页搜索BaseUrl")
+    BOCHA_WEB_API_KEY: Optional[str] = Field(None, description="Bocha API（申请地址：https://open.bochaai.com/）API密钥，用于Bocha搜索")
+    ENABLE_BOCHA: bool = Field(True, description="是否启用 Bocha 爬虫工具")
 
     # Firecrawl (Web-Access)
     FIRECRAWL_API_URL: Optional[str] = Field("https://api.firecrawl.dev/v1", description="Firecrawl API 基础地址")
     FIRECRAWL_API_KEY: Optional[str] = Field(None, description="Firecrawl API 密钥")
+    ENABLE_FIRECRAWL: bool = Field(True, description="是否启用 Firecrawl 爬虫工具")
+    
+    # MediaCrawler 和 Web Access
+    ENABLE_MEDIACRAWLER: bool = Field(True, description="是否启用 MediaCrawler 本地自动化爬虫工具")
+    ENABLE_WEB_ACCESS: bool = Field(True, description="是否启用 Web Access 兜底直连抓取方案")
 
     
     # ================== Insight Engine 搜索配置 ====================

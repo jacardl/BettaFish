@@ -214,7 +214,9 @@ postgres_db_config = {{
                 elif line.startswith('CRAWLER_MAX_COMMENTS_COUNT_SINGLENOTES = '):
                     replaced = 'CRAWLER_MAX_COMMENTS_COUNT_SINGLENOTES = 20'
                 elif line.startswith('HEADLESS = '):
-                    replaced = 'HEADLESS = True'
+                    replaced = 'HEADLESS = False'
+                elif line.startswith('AUTO_CLOSE_BROWSER = '):
+                    replaced = 'AUTO_CLOSE_BROWSER = False'
 
                 if replaced is not None:
                     new_lines.append(replaced)

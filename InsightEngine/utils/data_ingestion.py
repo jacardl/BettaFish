@@ -301,6 +301,137 @@ def _insert_results_into_db(results, now_ts, source_name):
     return inserted_count, details
 
 
+def ingest_incremental_mediacrawler_data(query: str, platforms: list = None):
+    """
+    通过内部 MediaCrawler 子模块实时抓取小红书、抖音等平台数据。
+    调用 PlatformCrawler 执行任务，它会将数据存入本地数据库，
+    此时数据没有 embedding。我们需要将刚插入的数据进行向量化。
+    """
+    if not query:
+        return 0, "查询为空"
+        
+    try:
+        import sys
+        from pathlib import Path
+        project_root = Path(__file__).parent.parent.parent
+        sys.path.append(str(project_root))
+        
+        from MindSpider.DeepSentimentCrawling.platform_crawler import PlatformCrawler
+        crawler = PlatformCrawler()
+    except Exception as e:
+        logger.warning(f"无法初始化 MediaCrawler，跳过社交媒体平台抓取: {e}")
+        return 0, f"MediaCrawler初始化失败: {e}"
+        
+    logger.info(f"🔄 正在通过 MediaCrawler 获取 '{query}' 的增量数据...")
+    total_inserted = 0
+    details = []
+    
+    # 根据配置或需求增减平台
+    platforms_to_crawl = platforms if platforms else ['xhs', 'dy']
+    
+    try:
+        # 为了避免阻塞过久，这里限制 max_notes=5 或 10
+        stats = crawler.run_multi_platform_crawl_by_keywords(
+            keywords=[query],
+            platforms=platforms_to_crawl,
+            login_type="qrcode",
+            max_notes_per_keyword=5
+        )
+        
+        for p in platforms_to_crawl:
+            p_stats = stats.get("platform_summary", {}).get(p, {})
+            notes_count = p_stats.get("total_notes", 0)
+            if notes_count > 0:
+                total_inserted += notes_count
+                details.append(f"{p}:{notes_count}")
+                
+        # MediaCrawler 执行完成后，数据已经写入本地数据库（例如 xhs_note, douyin_aweme 等表）
+        # 但是这些新数据没有 embedding，我们需要在这里触发反向回填（backfill）
+        log_file = Path("logs/crawler.log")
+        if total_inserted > 0:
+            logger.info("⏳ MediaCrawler 抓取完毕，准备为新插入的数据生成向量...")
+            if log_file.parent.exists():
+                with open(log_file, "a", encoding="utf-8") as f:
+                    ts_str = datetime.now().strftime('%H:%M:%S')
+                    f.write(f"[{ts_str}] [SYSTEM] 🕷️ MediaCrawler 抓取完成！准备回填 {total_inserted} 条数据的向量。\n")
+            
+            import asyncio
+            from utils.embedding import embedding_service
+            from InsightEngine.utils.db import get_async_engine
+            from sqlalchemy import text
+            
+            async def backfill_embeddings():
+                engine = get_async_engine()
+                async with engine.begin() as conn:
+                    # 检查所有受支持的表
+                    tables_content_cols = {
+                        'xhs_note': 'desc',
+                        'douyin_aweme': 'desc',
+                        'bilibili_video': 'desc',
+                        'kuaishou_video': 'desc',
+                        'weibo_note': 'desc',
+                        'zhihu_content': 'content',
+                        'tieba_note': 'content'
+                    }
+                    
+                    for tb_name, col_name in tables_content_cols.items():
+                        # 找出没有 embedding 的记录
+                        query_sql = text(f"SELECT id, title, {col_name} as content FROM {tb_name} WHERE embedding IS NULL LIMIT 100")
+                        try:
+                            res = await conn.execute(query_sql)
+                            rows = res.fetchall()
+                            if not rows:
+                                continue
+                                
+                            logger.info(f"表 {tb_name} 发现 {len(rows)} 条无向量记录，开始生成...")
+                            texts_to_embed = []
+                            ids = []
+                            for r in rows:
+                                t = r.title or ""
+                                c = r.content or ""
+                                combined = f"{t} {c}".strip()
+                                texts_to_embed.append(combined)
+                                ids.append(r.id)
+                                
+                                # 写日志
+                                if log_file.parent.exists():
+                                    with open(log_file, "a", encoding="utf-8") as f:
+                                        ts_time = datetime.now().strftime('%H:%M:%S')
+                                        short_title = t[:30] + '...' if len(t) > 30 else t
+                                        if not short_title:
+                                            short_title = c[:30] + '...' if len(c) > 30 else c
+                                        f.write(f"[{ts_time}] [RECORD] 📝 成功插入 [MediaCrawler] -> [{tb_name}] {short_title}\n")
+                                
+                            embeddings = embedding_service.get_embeddings(texts_to_embed)
+                            
+                            # 更新回数据库
+                            for idx, emb in zip(ids, embeddings):
+                                # pgvector expects string representation like '[0.1, 0.2, ...]'
+                                emb_str = "[" + ",".join(map(str, emb)) + "]"
+                                update_sql = text(f"UPDATE {tb_name} SET embedding = :emb WHERE id = :id")
+                                await conn.execute(update_sql, {"emb": emb_str, "id": idx})
+                                
+                            logger.info(f"✅ 表 {tb_name} 成功更新 {len(rows)} 条向量记录")
+                        except Exception as table_err:
+                            # 表可能不存在，跳过
+                            continue
+                            
+            # 运行反向回填任务
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.create_task(backfill_embeddings())
+                else:
+                    loop.run_until_complete(backfill_embeddings())
+            except Exception as e:
+                asyncio.run(backfill_embeddings())
+                
+    except Exception as e:
+        logger.error(f"❌ MediaCrawler 增量抓取请求失败: {e}")
+        return 0, f"抓取失败: {e}"
+        
+    return total_inserted, ", ".join(details) if details else "无新增数据"
+
 def ingest_incremental_anspire_data(query: str):
     """通过 Anspire API 实时抓取增量数据，并插入到本地对应的数据表中
     返回: (插入总行数: int, 分平台明细: str)
@@ -676,7 +807,7 @@ def ingest_incremental_web_access_data(query: str):
 def ingest_all_sources_data(query: str):
     """
     统一的数据采集入口。
-    并行调用配置的所有数据源（Anspire, Tavily, Bocha 等），
+    并行调用配置的所有数据源（Anspire, Bocha 等），
     并将所有结果聚合写入本地数据库和日志。
     """
     if not query:
@@ -687,57 +818,83 @@ def ingest_all_sources_data(query: str):
     total_inserted = 0
     all_details = []
     
-    # 我们按顺序或并行执行，为了简单稳妥起见，这里按顺序执行并累加结果
-    try:
-        anspire_count, anspire_detail = ingest_incremental_anspire_data(query)
-        if anspire_count > 0:
-            total_inserted += anspire_count
-            all_details.append(f"[Anspire] {anspire_detail}")
-    except Exception as e:
-        logger.error(f"Anspire 采集异常: {e}")
+    # 获取配置中的开关状态
+    enable_anspire = str(os.getenv("ENABLE_ANSPIRE", getattr(settings, "ENABLE_ANSPIRE", "True"))).lower() in ("true", "1", "yes", "t")
+    enable_tavily = str(os.getenv("ENABLE_TAVILY", getattr(settings, "ENABLE_TAVILY", "True"))).lower() in ("true", "1", "yes", "t")
+    enable_bocha = str(os.getenv("ENABLE_BOCHA", getattr(settings, "ENABLE_BOCHA", "True"))).lower() in ("true", "1", "yes", "t")
+    enable_firecrawl = str(os.getenv("ENABLE_FIRECRAWL", getattr(settings, "ENABLE_FIRECRAWL", "True"))).lower() in ("true", "1", "yes", "t")
+    enable_mediacrawler = str(os.getenv("ENABLE_MEDIACRAWLER", getattr(settings, "ENABLE_MEDIACRAWLER", "True"))).lower() in ("true", "1", "yes", "t")
+    enable_web_access = str(os.getenv("ENABLE_WEB_ACCESS", getattr(settings, "ENABLE_WEB_ACCESS", "True"))).lower() in ("true", "1", "yes", "t")
 
-    try:
-        tavily_count, tavily_detail = ingest_incremental_tavily_data(query)
-        if tavily_count > 0:
-            total_inserted += tavily_count
-            all_details.append(f"[Tavily] {tavily_detail}")
-    except Exception as e:
-        logger.error(f"Tavily 采集异常: {e}")
+    if enable_anspire:
+        try:
+            anspire_count, anspire_detail = ingest_incremental_anspire_data(query)
+            if anspire_count > 0:
+                total_inserted += anspire_count
+                all_details.append(f"[Anspire] {anspire_detail}")
+        except Exception as e:
+            logger.error(f"Anspire 采集异常: {e}")
+    else:
+        logger.info("Anspire 爬虫已被禁用，跳过采集。")
 
-    try:
-        bocha_count, bocha_detail = ingest_incremental_bocha_data(query)
-        if bocha_count > 0:
-            total_inserted += bocha_count
-            all_details.append(f"[Bocha] {bocha_detail}")
-    except Exception as e:
-        logger.error(f"Bocha 采集异常: {e}")
+    if enable_tavily:
+        try:
+            tavily_count, tavily_detail = ingest_incremental_tavily_data(query)
+            if tavily_count > 0:
+                total_inserted += tavily_count
+                all_details.append(f"[Tavily] {tavily_detail}")
+        except Exception as e:
+            logger.error(f"Tavily 采集异常: {e}")
+    else:
+        logger.info("Tavily 爬虫已被禁用，跳过采集。")
+
+    if enable_bocha:
+        try:
+            bocha_count, bocha_detail = ingest_incremental_bocha_data(query)
+            if bocha_count > 0:
+                total_inserted += bocha_count
+                all_details.append(f"[Bocha] {bocha_detail}")
+        except Exception as e:
+            logger.error(f"Bocha 采集异常: {e}")
+    else:
+        logger.info("Bocha 爬虫已被禁用，跳过采集。")
 
     # Web-Access (Firecrawl)
-    try:
-        web_count, web_detail = ingest_incremental_web_access_data(query)
-        if web_count > 0:
-            total_inserted += web_count
-            all_details.append(f"[WebAccess] {web_detail}")
-    except Exception as e:
-        logger.error(f"Web-Access 采集异常: {e}")
+    if enable_firecrawl:
+        try:
+            web_count, web_detail = ingest_incremental_web_access_data(query)
+            if web_count > 0:
+                total_inserted += web_count
+                all_details.append(f"[Firecrawl] {web_detail}")
+        except Exception as e:
+            logger.error(f"Firecrawl 采集异常: {e}")
+    else:
+        logger.info("Firecrawl 爬虫已被禁用，跳过采集。")
 
-    # 如果没有任何 API Key 被配置且都没有抓到数据，触发兜底方案
-    if total_inserted == 0 and not all_details:
-        # 检查是否所有配置都为空
-        anspire_key = os.getenv("ANSPIRE_API_KEY") or getattr(settings, "ANSPIRE_API_KEY", None)
-        tavily_key = os.getenv("TAVILY_API_KEY") or getattr(settings, "TAVILY_API_KEY", None)
-        bocha_key = os.getenv("BOCHA_API_KEY") or os.getenv("BOCHA_WEB_API_KEY") or getattr(settings, "BOCHA_WEB_SEARCH_API_KEY", None)
-        firecrawl_key = os.getenv("FIRECRAWL_API_KEY")
-        
-        if not any([anspire_key, tavily_key, bocha_key, firecrawl_key]):
-            logger.warning("⚠️ 警告: 未配置任何外部搜索 API，将使用 DuckDuckGo 兜底方案。")
-            try:
-                ddg_count, ddg_detail = ingest_incremental_duckduckgo_data(query)
-                if ddg_count > 0:
-                    total_inserted += ddg_count
-                    all_details.append(f"[DuckDuckGo] {ddg_detail}")
-            except Exception as e:
-                logger.error(f"DuckDuckGo 兜底采集异常: {e}")
+    # MediaCrawler (小红书、抖音等社交媒体)
+    if enable_mediacrawler:
+        try:
+            mc_count, mc_detail = ingest_incremental_mediacrawler_data(query)
+            if mc_count > 0:
+                total_inserted += mc_count
+                all_details.append(f"[MediaCrawler] {mc_detail}")
+        except Exception as e:
+            logger.error(f"MediaCrawler 采集异常: {e}")
+    else:
+        logger.info("MediaCrawler 爬虫已被禁用，跳过采集。")
+
+    # 兜底方案
+    if enable_web_access and total_inserted == 0 and not all_details:
+        logger.warning("⚠️ 警告: 未能通过高级 API 获取数据，将使用 Web-Access (DuckDuckGo) 兜底方案。")
+        try:
+            ddg_count, ddg_detail = ingest_incremental_duckduckgo_data(query)
+            if ddg_count > 0:
+                total_inserted += ddg_count
+                all_details.append(f"[Web-Access] {ddg_detail}")
+        except Exception as e:
+            logger.error(f"Web-Access 兜底采集异常: {e}")
+    elif not enable_web_access and total_inserted == 0:
+        logger.info("Web-Access 兜底方案已被禁用。")
 
     final_detail = " | ".join(all_details) if all_details else "无新增数据"
     return total_inserted, final_detail
