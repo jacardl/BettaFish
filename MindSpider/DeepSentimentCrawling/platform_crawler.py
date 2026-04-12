@@ -237,6 +237,21 @@ postgres_db_config = {{
             logger.exception(f"创建基础配置失败: {e}")
             return False
     
+    def _write_to_crawler_log(self, level: str, message: str):
+        """
+        将日志实时写入到 crawler.log 中，以便 Web UI 显示。
+        """
+        try:
+            from pathlib import Path
+            from datetime import datetime
+            log_file = Path("logs/crawler.log")
+            if log_file.parent.exists():
+                with open(log_file, "a", encoding="utf-8") as f:
+                    ts_str = datetime.now().strftime('%H:%M:%S')
+                    f.write(f"[{ts_str}] [{level}] {message}\n")
+        except Exception:
+            pass
+
     def run_crawler(self, platform: str, keywords: List[str], 
                    login_type: str = "qrcode", max_notes: int = 50) -> Dict:
         """
@@ -319,15 +334,21 @@ postgres_db_config = {{
             if result.returncode == 0:
                 logger.info(f"✅ {platform} 爬取完成，耗时: {duration:.1f}秒")
             else:
-                logger.error(f"❌ {platform} 爬取失败，返回码: {result.returncode}")
+                err_msg = f"❌ {platform} 爬取失败，返回码: {result.returncode}"
+                logger.error(err_msg)
+                self._write_to_crawler_log("ERROR", err_msg)
             
             return crawl_stats
             
         except subprocess.TimeoutExpired:
-            logger.exception(f"❌ {platform} 爬取超时")
+            err_msg = f"❌ {platform} 爬取超时"
+            logger.exception(err_msg)
+            self._write_to_crawler_log("ERROR", err_msg)
             return {"success": False, "error": "爬取超时", "platform": platform}
         except Exception as e:
-            logger.exception(f"❌ {platform} 爬取异常: {e}")
+            err_msg = f"❌ {platform} 爬取异常: {e}"
+            logger.exception(err_msg)
+            self._write_to_crawler_log("ERROR", err_msg)
             return {"success": False, "error": str(e), "platform": platform}
     
     def _parse_crawl_output(self, output_lines: List[str], error_lines: List[str]) -> Dict:

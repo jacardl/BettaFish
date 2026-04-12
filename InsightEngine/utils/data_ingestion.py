@@ -242,21 +242,37 @@ def _insert_results_into_db(results, now_ts, source_name):
             emb_str = None
         
         if "bilibili.com" in url:
-            import hashlib
-            video_id = f"{source_name}_" + hashlib.md5(url.encode()).hexdigest()[:16]
-            sql = "INSERT INTO bilibili_video (title, \"desc\", video_id, video_url, create_time, nickname, extra_info, embedding) VALUES (:t, :d, :vid, :u, :ts, :a, :ei, :emb)"
+            # 解决 bilibili_video 表 video_id 是 BigInteger 的问题
+            # Web-Access 的 B站视频 ID 我们存成负的哈希数值，或者只取其原生的数字aid（如果能提取的话）
+            # 最简单的方案是把 video_id 转为随机大整数或利用 url 提取 aid
+            import re
+            aid_match = re.search(r'av(\d+)', url)
+            bvid_match = re.search(r'BV([a-zA-Z0-9]+)', url)
+            
+            # 由于 MediaCrawler 的 video_id 对应的是 B 站的 aid (int)
+            # 如果没找到，我们可以随机生成一个大的负整数，避免冲突
+            if aid_match:
+                video_id = int(aid_match.group(1))
+            else:
+                # 把 URL hash 成一个 15 位的整数
+                import hashlib
+                hash_int = int(hashlib.md5(url.encode()).hexdigest()[:12], 16)
+                # 转为负数，防止和真实的 aid 冲突
+                video_id = -hash_int
+                
+            sql = "INSERT INTO bilibili_video (title, \"desc\", video_id, video_url, create_time, nickname, extra_info, embedding) VALUES (:t, :d, :vid, :u, :ts, :a, :ei, :emb) ON CONFLICT (video_id) DO NOTHING"
             params = {"t": title, "d": content, "vid": video_id, "u": url, "ts": ts, "a": "B站用户", "ei": extra_info_str, "emb": emb_str}
             platform_key = "bilibili"
         elif "xiaohongshu.com" in url:
-            sql = "INSERT INTO xhs_note (title, \"desc\", note_url, time, nickname, extra_info, embedding) VALUES (:t, :d, :u, :ts, :a, :ei, :emb)"
+            sql = "INSERT INTO xhs_note (title, \"desc\", note_url, time, nickname, extra_info, embedding) VALUES (:t, :d, :u, :ts, :a, :ei, :emb) ON CONFLICT (note_id) DO NOTHING"
             params = {"t": title, "d": content, "u": url, "ts": ts, "a": "小红书用户", "ei": extra_info_str, "emb": emb_str}
             platform_key = "xiaohongshu"
         elif "douyin.com" in url:
-            sql = "INSERT INTO douyin_aweme (title, \"desc\", aweme_url, create_time, nickname, extra_info, embedding) VALUES (:t, :d, :u, :ts, :a, :ei, :emb)"
+            sql = "INSERT INTO douyin_aweme (title, \"desc\", aweme_url, create_time, nickname, extra_info, embedding) VALUES (:t, :d, :u, :ts, :a, :ei, :emb) ON CONFLICT (aweme_id) DO NOTHING"
             params = {"t": title, "d": content, "u": url, "ts": ts, "a": "抖音用户", "ei": extra_info_str, "emb": emb_str}
             platform_key = "douyin"
         elif "weibo.com" in url:
-            sql = "INSERT INTO weibo_note (content, note_url, create_time, nickname, extra_info, embedding) VALUES (:d, :u, :ts, :a, :ei, :emb)"
+            sql = "INSERT INTO weibo_note (content, note_url, create_time, nickname, extra_info, embedding) VALUES (:d, :u, :ts, :a, :ei, :emb) ON CONFLICT (note_id) DO NOTHING"
             params = {"d": content, "u": url, "ts": ts, "a": "微博用户", "ei": extra_info_str, "emb": emb_str}
             platform_key = "weibo"
         else:
@@ -264,7 +280,7 @@ def _insert_results_into_db(results, now_ts, source_name):
             news_id = f"{source_name}_" + hashlib.md5(url.encode()).hexdigest()[:16]
             crawl_date = datetime.now().date()
             # 其他全部入每日热点表，标记平台为 web
-            sql = "INSERT INTO daily_news (news_id, source_platform, title, description, url, crawl_date, add_ts, last_modify_ts, rank_position, extra_info, embedding) VALUES (:nid, 'web', :t, :d, :u, :cdate, :ts, :ts, 99, :ei, :emb)"
+            sql = "INSERT INTO daily_news (news_id, source_platform, title, description, url, crawl_date, add_ts, last_modify_ts, rank_position, extra_info, embedding) VALUES (:nid, 'web', :t, :d, :u, :cdate, :ts, :ts, 99, :ei, :emb) ON CONFLICT (news_id, source_platform, crawl_date) DO NOTHING"
             params = {"nid": news_id, "t": title, "d": content, "u": url, "cdate": crawl_date, "ts": ts, "ei": extra_info_str, "emb": emb_str}
             platform_key = "web_news"
             
@@ -292,7 +308,9 @@ def _insert_results_into_db(results, now_ts, source_name):
                         short_title = content[:30] + '...' if len(content) > 30 else content
                     f.write(f"[{ts_str}] [RECORD] 📝 成功插入 [{source_name}] -> [{platform_key}] {short_title}\n")
     except Exception as e:
-        logger.error(f"❌ 批量插入数据失败: {e}")
+        err_msg = f"❌ 批量插入数据失败: {e}"
+        logger.error(err_msg)
+        _write_to_crawler_log("ERROR", err_msg)
     finally:
         import InsightEngine.utils.db as db_utils
         db_utils._engine = None
@@ -319,7 +337,9 @@ def ingest_incremental_mediacrawler_data(query: str, platforms: list = None):
         from MindSpider.DeepSentimentCrawling.platform_crawler import PlatformCrawler
         crawler = PlatformCrawler()
     except Exception as e:
-        logger.warning(f"无法初始化 MediaCrawler，跳过社交媒体平台抓取: {e}")
+        err_msg = f"无法初始化 MediaCrawler，跳过社交媒体平台抓取: {e}"
+        logger.warning(err_msg)
+        _write_to_crawler_log("WARNING", err_msg)
         return 0, f"MediaCrawler初始化失败: {e}"
         
     logger.info(f"🔄 正在通过 MediaCrawler 获取 '{query}' 的增量数据...")
@@ -427,7 +447,9 @@ def ingest_incremental_mediacrawler_data(query: str, platforms: list = None):
                 asyncio.run(backfill_embeddings())
                 
     except Exception as e:
-        logger.error(f"❌ MediaCrawler 增量抓取请求失败: {e}")
+        err_msg = f"❌ MediaCrawler 增量抓取请求失败: {e}"
+        logger.error(err_msg)
+        _write_to_crawler_log("ERROR", err_msg)
         return 0, f"抓取失败: {e}"
         
     return total_inserted, ", ".join(details) if details else "无新增数据"
@@ -804,6 +826,19 @@ def ingest_incremental_web_access_data(query: str):
     logger.info(f"✅ [Anspire] 增量数据抓取完成: 成功向本地数据库插入 {inserted_count} 条最新记录. 分布: {details}")
     return inserted_count, details
 
+def _write_to_crawler_log(level: str, message: str):
+    """
+    将日志实时写入到 crawler.log 中，以便 Web UI 显示。
+    """
+    try:
+        log_file = Path("logs/crawler.log")
+        if log_file.parent.exists():
+            with open(log_file, "a", encoding="utf-8") as f:
+                ts_str = datetime.now().strftime('%H:%M:%S')
+                f.write(f"[{ts_str}] [{level}] {message}\n")
+    except Exception:
+        pass
+
 def ingest_all_sources_data(query: str):
     """
     统一的数据采集入口。
@@ -814,6 +849,7 @@ def ingest_all_sources_data(query: str):
         return 0, "查询为空"
 
     logger.info(f"🚀 开始全网多源联合采集，关键词: '{query}'")
+    _write_to_crawler_log("SYSTEM", f"🚀 开始全网多源联合采集，关键词: '{query}'")
     
     total_inserted = 0
     all_details = []
@@ -833,7 +869,9 @@ def ingest_all_sources_data(query: str):
                 total_inserted += anspire_count
                 all_details.append(f"[Anspire] {anspire_detail}")
         except Exception as e:
-            logger.error(f"Anspire 采集异常: {e}")
+            err_msg = f"Anspire 采集异常: {e}"
+            logger.error(err_msg)
+            _write_to_crawler_log("ERROR", f"❌ {err_msg}")
     else:
         logger.info("Anspire 爬虫已被禁用，跳过采集。")
 
@@ -844,7 +882,9 @@ def ingest_all_sources_data(query: str):
                 total_inserted += tavily_count
                 all_details.append(f"[Tavily] {tavily_detail}")
         except Exception as e:
-            logger.error(f"Tavily 采集异常: {e}")
+            err_msg = f"Tavily 采集异常: {e}"
+            logger.error(err_msg)
+            _write_to_crawler_log("ERROR", f"❌ {err_msg}")
     else:
         logger.info("Tavily 爬虫已被禁用，跳过采集。")
 
@@ -855,7 +895,9 @@ def ingest_all_sources_data(query: str):
                 total_inserted += bocha_count
                 all_details.append(f"[Bocha] {bocha_detail}")
         except Exception as e:
-            logger.error(f"Bocha 采集异常: {e}")
+            err_msg = f"Bocha 采集异常: {e}"
+            logger.error(err_msg)
+            _write_to_crawler_log("ERROR", f"❌ {err_msg}")
     else:
         logger.info("Bocha 爬虫已被禁用，跳过采集。")
 
@@ -867,7 +909,9 @@ def ingest_all_sources_data(query: str):
                 total_inserted += web_count
                 all_details.append(f"[Firecrawl] {web_detail}")
         except Exception as e:
-            logger.error(f"Firecrawl 采集异常: {e}")
+            err_msg = f"Firecrawl 采集异常: {e}"
+            logger.error(err_msg)
+            _write_to_crawler_log("ERROR", f"❌ {err_msg}")
     else:
         logger.info("Firecrawl 爬虫已被禁用，跳过采集。")
 
@@ -879,20 +923,25 @@ def ingest_all_sources_data(query: str):
                 total_inserted += mc_count
                 all_details.append(f"[MediaCrawler] {mc_detail}")
         except Exception as e:
-            logger.error(f"MediaCrawler 采集异常: {e}")
+            err_msg = f"MediaCrawler 采集异常: {e}"
+            logger.error(err_msg)
+            _write_to_crawler_log("ERROR", f"❌ {err_msg}")
     else:
         logger.info("MediaCrawler 爬虫已被禁用，跳过采集。")
 
     # 兜底方案
     if enable_web_access and total_inserted == 0 and not all_details:
         logger.warning("⚠️ 警告: 未能通过高级 API 获取数据，将使用 Web-Access (DuckDuckGo) 兜底方案。")
+        _write_to_crawler_log("SYSTEM", "⚠️ 警告: 未能通过高级 API 获取数据，将使用 Web-Access (DuckDuckGo) 兜底方案。")
         try:
             ddg_count, ddg_detail = ingest_incremental_duckduckgo_data(query)
             if ddg_count > 0:
                 total_inserted += ddg_count
                 all_details.append(f"[Web-Access] {ddg_detail}")
         except Exception as e:
-            logger.error(f"Web-Access 兜底采集异常: {e}")
+            err_msg = f"Web-Access 兜底采集异常: {e}"
+            logger.error(err_msg)
+            _write_to_crawler_log("ERROR", f"❌ {err_msg}")
     elif not enable_web_access and total_inserted == 0:
         logger.info("Web-Access 兜底方案已被禁用。")
 

@@ -46,7 +46,9 @@ RUN set -euo pipefail; \
         libx11-xcb1 \
         libxshmfence1 \
         libgbm1 \
-        ffmpeg; \
+        ffmpeg \
+        nodejs \
+        npm; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*
 

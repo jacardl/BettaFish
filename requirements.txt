@@ -51,6 +51,8 @@ lxml>=4.9.0
 parsel==1.9.1
 pyexecjs==1.5.1
 xhshow>=0.1.3
+humps==0.2.2
+pyhumps==3.8.0
 
 # ===== 可视化 =====
 plotly>=5.17.0

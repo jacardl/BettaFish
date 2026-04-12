@@ -25,6 +25,7 @@ services:
       - ./insight_engine_streamlit_reports:/app/insight_engine_streamlit_reports
       - ./media_engine_streamlit_reports:/app/media_engine_streamlit_reports
       - ./query_engine_streamlit_reports:/app/query_engine_streamlit_reports
+      - ./MindSpider/DeepSentimentCrawling/MediaCrawler/browser_data:/app/MindSpider/DeepSentimentCrawling/MediaCrawler/browser_data
     depends_on:
       db:
         condition: service_healthy
